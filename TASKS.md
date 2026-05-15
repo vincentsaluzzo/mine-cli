@@ -19,153 +19,154 @@ Goal: manage one Minecraft server from inside its folder.
 
 ### CLI Foundation
 
-- [ ] Add the `minecli` executable entrypoint.
-- [ ] Add global flags: `--path`, `--config`, `--dry-run`, `--yes`, `--verbose`.
-- [ ] Add structured error handling.
-- [ ] Add user-friendly terminal output.
-- [ ] Add a command dispatch structure that keeps commands isolated.
+- [x] Add the `minecli` executable entrypoint.
+- [x] Add global flags: `--path`, `--config`, `--dry-run`, `--yes`, `--verbose`.
+- [x] Add structured error handling.
+- [x] Add user-friendly terminal output.
+- [x] Add a command dispatch structure that keeps commands isolated.
 
 ### Local State
 
-- [ ] Define the `.minecli/` directory layout.
-- [ ] Define `server.toml`.
-- [ ] Define `lock.toml`.
-- [ ] Define `history.log`.
-- [ ] Implement loading local server config.
-- [ ] Implement writing local server config.
-- [ ] Implement loading the lockfile.
-- [ ] Implement writing the lockfile atomically.
-- [ ] Add tests for config and lockfile serialization.
+- [x] Define the `.minecli/` directory layout.
+- [x] Define `server.toml`.
+- [x] Define `lock.toml`.
+- [x] Define `history.log`.
+- [x] Implement loading local server config.
+- [x] Implement writing local server config.
+- [x] Implement loading the lockfile.
+- [x] Implement writing the lockfile atomically.
+- [x] Add tests for config and lockfile serialization.
 
 ### Init Command
 
-- [ ] Implement `minecli init`.
-- [ ] Support `minecli init --type <server-type> --minecraft <version>`.
-- [ ] Create `.minecli/server.toml`.
-- [ ] Create an empty `.minecli/lock.toml`.
-- [ ] Detect default paths for `mods`, `plugins`, and datapacks.
-- [ ] Refuse to overwrite existing MineCLI state unless `--force` is passed.
-- [ ] Add tests for init behavior.
+- [x] Implement `minecli init`.
+- [x] Support `minecli init --type <server-type> --minecraft <version>`.
+- [x] Create `.minecli/server.toml`.
+- [x] Create an empty `.minecli/lock.toml`.
+- [x] Detect default paths for `mods`, `plugins`, and datapacks.
+- [x] Refuse to overwrite existing MineCLI state unless `--force` is passed.
+- [x] Add tests for init behavior.
 
 ### Server Model
 
-- [ ] Define supported server types.
-- [ ] Define supported content kinds: `mod`, `plugin`, `datapack`.
-- [ ] Map server type and content kind to install paths.
-- [ ] Add basic server type detection from common jar filenames.
-- [ ] Add validation for server type and content kind compatibility.
-- [ ] Add tests for install path resolution.
+- [x] Define supported server types.
+- [x] Define supported content kinds: `mod`, `plugin`, `datapack`.
+- [x] Map server type and content kind to install paths.
+- [x] Add basic server type detection from common jar filenames.
+- [x] Add validation for server type and content kind compatibility.
+- [x] Add tests for install path resolution.
 
 ### Modrinth Client
 
-- [ ] Implement a Modrinth HTTP client.
-- [ ] Set a clear User-Agent for all Modrinth requests.
-- [ ] Implement project search.
-- [ ] Implement project lookup by slug or ID.
-- [ ] Implement version listing for a project.
-- [ ] Implement loader tag fetching.
-- [ ] Implement project type tag fetching.
-- [ ] Implement response caching where useful.
-- [ ] Add tests with mocked Modrinth responses.
+- [x] Implement a Modrinth HTTP client.
+- [x] Set a clear User-Agent for all Modrinth requests.
+- [x] Implement project search.
+- [x] Implement project lookup by slug or ID.
+- [x] Implement version listing for a project.
+- [x] Implement loader tag fetching.
+- [x] Implement project type tag fetching.
+- [x] Implement response caching where useful.
+- [x] Add tests with mocked Modrinth responses.
 
 ### Search Command
 
-- [ ] Implement `minecli search <query>`.
-- [ ] Filter search by Minecraft version from `server.toml`.
-- [ ] Filter search by server loader or type.
-- [ ] Filter search by content kind when `--kind` is passed.
-- [ ] Hide client-only projects by default for server installs.
-- [ ] Display slug, title, project type, downloads, server support, and summary.
-- [ ] Add tests for search query construction.
+- [x] Implement `minecli search <query>`.
+- [x] Filter search by Minecraft version from `server.toml`.
+- [x] Filter search by server loader or type.
+- [x] Filter search by content kind when `--kind` is passed.
+- [x] Hide client-only projects by default for server installs.
+- [x] Display slug, title, project type, downloads, server support, and summary.
+- [x] Add tests for search query construction.
 
 ### Version Selection
 
-- [ ] Define version selection rules.
-- [ ] Prefer `release` versions by default.
-- [ ] Allow `--channel beta`.
-- [ ] Allow `--channel alpha`.
-- [ ] Select only versions matching Minecraft version.
-- [ ] Select only versions matching loader or server type.
-- [ ] Select the primary file when available.
-- [ ] Fall back to the first file only when no primary file exists.
-- [ ] Add tests for version selection.
+- [x] Define version selection rules.
+- [x] Prefer `release` versions by default.
+- [x] Allow `--channel beta`.
+- [x] Allow `--channel alpha`.
+- [x] Select only versions matching Minecraft version.
+- [x] Select only versions matching loader or server type.
+- [x] Select the primary file when available.
+- [x] Fall back to the first file only when no primary file exists.
+- [x] Add tests for version selection.
 
 ### Dependency Resolution
 
-- [ ] Read dependencies from Modrinth version metadata.
-- [ ] Install `required` dependencies automatically.
-- [ ] Show `optional` dependencies without installing by default.
-- [ ] Warn about `incompatible` dependencies.
-- [ ] Treat `embedded` dependencies as informational.
-- [ ] Avoid installing duplicate dependencies.
-- [ ] Detect dependency cycles.
-- [ ] Add tests for required dependency resolution.
+- [x] Read dependencies from Modrinth version metadata.
+- [x] Install `required` dependencies automatically.
+- [x] Show `optional` dependencies without installing by default.
+- [x] Warn about `incompatible` dependencies.
+- [x] Treat `embedded` dependencies as informational.
+- [x] Avoid installing duplicate dependencies.
+- [x] Detect dependency cycles.
+- [x] Add tests for required dependency resolution.
 
 ### Install Planning
 
-- [ ] Build an install plan before touching files.
-- [ ] Include target paths in the plan.
-- [ ] Include dependency installs in the plan.
-- [ ] Detect conflicts with existing files.
-- [ ] Detect when a package is already installed.
-- [ ] Support `minecli install <project> --dry-run`.
-- [ ] Print a readable install summary.
-- [ ] Add tests for install planning.
+- [x] Build an install plan before touching files.
+- [x] Include target paths in the plan.
+- [x] Include dependency installs in the plan.
+- [x] Detect conflicts with existing files.
+- [x] Detect when a package is already installed.
+- [x] Support `minecli install <project> --dry-run`.
+- [x] Print a readable install summary.
+- [x] Add tests for install planning.
 
 ### Download And Verification
 
-- [ ] Define the global download cache path.
-- [ ] Download files to a temporary path first.
-- [ ] Verify SHA-512 when available.
-- [ ] Verify SHA-1 as a fallback.
-- [ ] Move verified downloads into cache.
-- [ ] Copy cached files into the server folder.
-- [ ] Handle interrupted downloads safely.
-- [ ] Add tests for hash verification.
+- [x] Define the global download cache path.
+- [x] Download files to a temporary path first.
+- [x] Verify SHA-512 when available.
+- [x] Verify SHA-1 as a fallback.
+- [x] Move verified downloads into cache.
+- [x] Copy cached files into the server folder.
+- [x] Handle interrupted downloads safely.
+- [x] Add tests for hash verification.
 
 ### Install Command
 
-- [ ] Implement `minecli install <project>`.
-- [ ] Support `--kind mod`.
-- [ ] Support `--kind plugin`.
-- [ ] Support `--kind datapack`.
-- [ ] Support `--version <version-id-or-number>`.
-- [ ] Support `--channel <release|beta|alpha>`.
-- [ ] Support `--no-deps`.
-- [ ] Update `lock.toml` after successful install.
-- [ ] Record the install in `history.log`.
-- [ ] Add integration tests for install using mocked downloads.
+- [x] Implement `minecli install <project>`.
+- [x] Support `--kind mod`.
+- [x] Support `--kind plugin`.
+- [x] Support `--kind datapack`.
+- [x] Support `--version <version-id-or-number>`.
+- [x] Support `--channel <release|beta|alpha>`.
+- [x] Support `--no-deps`.
+- [x] Update `lock.toml` after successful install.
+- [x] Record the install in `history.log`.
+- [x] Add integration tests for install using mocked downloads.
+- [x] Add ignored live integration tests for Fabric, Purpur, Forge, and NeoForge server folders.
 
 ### List Command
 
-- [ ] Implement `minecli list`.
-- [ ] Show installed package slug, kind, version, source, and path.
-- [ ] Support filtering by `--kind`.
-- [ ] Support machine-readable output with `--json`.
-- [ ] Add tests for list output.
+- [x] Implement `minecli list`.
+- [x] Show installed package slug, kind, version, source, and path.
+- [x] Support filtering by `--kind`.
+- [x] Support machine-readable output with `--json`.
+- [x] Add tests for list output.
 
 ### Remove Command
 
-- [ ] Implement `minecli remove <project>`.
-- [ ] Resolve packages by slug, project ID, or installed filename.
-- [ ] Remove only files tracked in `lock.toml`.
-- [ ] Warn when another installed package depends on the target.
-- [ ] Support `--remove-orphans` for unused dependencies.
-- [ ] Support `--dry-run`.
-- [ ] Update `lock.toml` after successful removal.
-- [ ] Record the removal in `history.log`.
-- [ ] Add tests for safe removal.
+- [x] Implement `minecli remove <project>`.
+- [x] Resolve packages by slug, project ID, or installed filename.
+- [x] Remove only files tracked in `lock.toml`.
+- [x] Warn when another installed package depends on the target.
+- [x] Support `--remove-orphans` for unused dependencies.
+- [x] Support `--dry-run`.
+- [x] Update `lock.toml` after successful removal.
+- [x] Record the removal in `history.log`.
+- [x] Add tests for safe removal.
 
 ### Status And Doctor
 
-- [ ] Implement `minecli status`.
-- [ ] Show server name, type, Minecraft version, and package counts.
-- [ ] Show whether unmanaged files exist in known content folders.
-- [ ] Implement `minecli doctor`.
-- [ ] Detect missing target directories.
-- [ ] Detect lockfile entries whose files are missing.
-- [ ] Detect installed files whose hashes do not match the lockfile.
-- [ ] Add tests for status and doctor checks.
+- [x] Implement `minecli status`.
+- [x] Show server name, type, Minecraft version, and package counts.
+- [x] Show whether unmanaged files exist in known content folders.
+- [x] Implement `minecli doctor`.
+- [x] Detect missing target directories.
+- [x] Detect lockfile entries whose files are missing.
+- [x] Detect installed files whose hashes do not match the lockfile.
+- [x] Add tests for status and doctor checks.
 
 ## Phase 2: Real Server Administration
 
