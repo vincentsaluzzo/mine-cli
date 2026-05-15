@@ -1,0 +1,10 @@
+[package]
+name = "minecli"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A CLI for managing Minecraft server mods, datapacks, and plugins."
+license = "MIT"
+readme = "README.md"
+
+[dependencies]
