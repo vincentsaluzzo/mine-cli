@@ -250,21 +250,21 @@ Goal: support broader workflows beyond direct registry installation.
 
 ### Import Existing Servers
 
-- [ ] Implement `minecli import`.
-- [ ] Scan existing `mods/`, `plugins/`, and datapacks.
-- [ ] Match files to Modrinth versions by hash when possible.
-- [ ] Add matched files to `lock.toml`.
-- [ ] Mark unmatched files as unmanaged.
-- [ ] Support `minecli import --dry-run`.
-- [ ] Add tests for hash-based import.
+- [x] Implement `minecli import`.
+- [x] Scan existing `mods/`, `plugins/`, and datapacks.
+- [x] Match files to Modrinth versions by hash when possible.
+- [x] Add matched files to `lock.toml`.
+- [x] Mark unmatched files as unmanaged.
+- [x] Support `minecli import --dry-run`.
+- [x] Add tests for hash-based import.
 
 ### Export And Sync
 
-- [ ] Implement `minecli export`.
-- [ ] Export a portable manifest.
-- [ ] Support restoring from an exported manifest.
-- [ ] Support syncing one server's MineCLI manifest into another server.
-- [ ] Add tests for export and restore.
+- [x] Implement `minecli export`.
+- [x] Export a portable manifest.
+- [x] Support restoring from an exported manifest.
+- [x] Support syncing one server's MineCLI manifest into another server.
+- [x] Add tests for export and restore.
 
 ### Additional Sources
 

@@ -113,6 +113,24 @@ impl ModrinthClient {
             .json()?)
     }
 
+    pub fn get_version_from_hash(
+        &self,
+        hash: &str,
+        algorithm: &str,
+    ) -> Result<Option<ProjectVersion>> {
+        let response = self
+            .http
+            .get(format!("{}/version_file/{hash}", self.base_url))
+            .query(&[("algorithm", algorithm)])
+            .send()?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        Ok(Some(response.error_for_status()?.json()?))
+    }
+
     #[allow(dead_code)]
     pub fn list_loaders(&self) -> Result<Vec<Tag>> {
         if let Some(tags) = self.loader_cache.lock().expect("loader cache").clone() {
@@ -162,6 +180,8 @@ pub trait ProjectSource {
     ) -> Result<Vec<ProjectVersion>>;
 
     fn get_version(&self, version_id: &str) -> Result<ProjectVersion>;
+
+    fn get_version_from_hash(&self, hash: &str, algorithm: &str) -> Result<Option<ProjectVersion>>;
 }
 
 impl ProjectSource for ModrinthClient {
@@ -180,6 +200,10 @@ impl ProjectSource for ModrinthClient {
 
     fn get_version(&self, version_id: &str) -> Result<ProjectVersion> {
         self.get_version(version_id)
+    }
+
+    fn get_version_from_hash(&self, hash: &str, algorithm: &str) -> Result<Option<ProjectVersion>> {
+        self.get_version_from_hash(hash, algorithm)
     }
 }
 

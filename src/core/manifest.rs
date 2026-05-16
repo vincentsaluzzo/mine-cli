@@ -68,6 +68,11 @@ pub fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
             path.display()
         ))
     })?;
+    let parent = if parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        parent
+    };
     fs::create_dir_all(parent).at(parent)?;
 
     let temp_path = parent.join(format!(

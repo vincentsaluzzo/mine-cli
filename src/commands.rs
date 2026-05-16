@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
 use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::Sha512;
 
@@ -45,6 +46,10 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
         } => init(&globals, server_type, minecraft, name, force),
         Command::Status => status(&globals),
         Command::Search { query, kind, limit } => search(&globals, query, kind, limit),
+        Command::Import => import_existing(&globals),
+        Command::Export { output } => export(&globals, output),
+        Command::Restore { manifest } => restore(&globals, manifest),
+        Command::Sync { source } => sync(&globals, source),
         Command::Install {
             project,
             kind,
@@ -314,6 +319,67 @@ fn search(
     }
 
     Ok(())
+}
+
+fn import_existing(globals: &GlobalOptions) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    let client = ModrinthClient::new()?;
+    let plan = plan_import_existing(&client, &globals.server_dir, &config, &lockfile)?;
+
+    println!("Import plan:");
+    for package in &plan.matched {
+        println!(
+            "  + {} {} ({}) -> {}",
+            package.slug,
+            package.kind,
+            package.version_number,
+            package.installed_path.display()
+        );
+    }
+    for path in &plan.unmatched {
+        println!("  ? unmanaged {}", path.display());
+    }
+
+    if globals.dry_run {
+        println!("Dry run: no files changed.");
+        return Ok(());
+    }
+
+    for package in plan.matched {
+        lockfile.upsert_package(package);
+    }
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(&globals.server_dir, "import existing files")?;
+    println!("Import complete.");
+    Ok(())
+}
+
+fn export(globals: &GlobalOptions, output: Option<PathBuf>) -> Result<()> {
+    let manifest = export_manifest_from_server(&globals.server_dir)?;
+    let contents =
+        toml::to_string_pretty(&manifest).map_err(|source| MinecliError::TomlSerialize {
+            path: output.clone().unwrap_or_else(|| PathBuf::from("<stdout>")),
+            source,
+        })?;
+
+    if let Some(output) = output {
+        crate::core::manifest::write_atomic(&output, contents.as_bytes())?;
+        println!("Exported manifest to {}", output.display());
+    } else {
+        print!("{contents}");
+    }
+    Ok(())
+}
+
+fn restore(globals: &GlobalOptions, manifest: PathBuf) -> Result<()> {
+    let manifest = read_export_manifest(&manifest)?;
+    restore_manifest(globals, &manifest, None)
+}
+
+fn sync(globals: &GlobalOptions, source: PathBuf) -> Result<()> {
+    let manifest = export_manifest_from_server(&source)?;
+    restore_manifest(globals, &manifest, Some(&source))
 }
 
 struct InstallOptions {
@@ -1242,6 +1308,300 @@ fn print_update_plan(plan: &[PlannedInstall], dry_run: bool) {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ExportManifest {
+    format_version: u32,
+    server: ServerConfig,
+    #[serde(default)]
+    packages: Vec<LockedPackage>,
+}
+
+#[derive(Debug, Default)]
+struct ImportPlan {
+    matched: Vec<LockedPackage>,
+    unmatched: Vec<PathBuf>,
+}
+
+fn export_manifest_from_server(server_dir: &Path) -> Result<ExportManifest> {
+    Ok(ExportManifest {
+        format_version: 1,
+        server: load_server_config(server_dir)?,
+        packages: load_lockfile(server_dir)?.packages,
+    })
+}
+
+fn read_export_manifest(path: &Path) -> Result<ExportManifest> {
+    let contents = fs::read_to_string(path).at(path)?;
+    let manifest: ExportManifest =
+        toml::from_str(&contents).map_err(|source| MinecliError::TomlDeserialize {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if manifest.format_version != 1 {
+        return Err(MinecliError::message(format!(
+            "unsupported manifest format version {}",
+            manifest.format_version
+        )));
+    }
+    validate_server_config(&manifest.server)?;
+    Ok(manifest)
+}
+
+fn restore_manifest(
+    globals: &GlobalOptions,
+    manifest: &ExportManifest,
+    sync_source: Option<&Path>,
+) -> Result<()> {
+    let config_exists = server_file(&globals.server_dir).exists();
+    let config = if config_exists {
+        let config = load_server_config(&globals.server_dir)?;
+        validate_server_config(&config)?;
+        config
+    } else {
+        manifest.server.clone()
+    };
+
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    let client = ModrinthClient::new()?;
+    let registry_packages = manifest
+        .packages
+        .iter()
+        .filter(|package| package.source == REGISTRY_SOURCE)
+        .cloned()
+        .collect::<Vec<_>>();
+    let plan = plan_registry_restore(
+        &client,
+        &config,
+        &lockfile,
+        &registry_packages,
+        ReleaseChannel::Alpha,
+    )?;
+
+    println!("Restore plan:");
+    for item in &plan {
+        println!(
+            "  + {} {} ({}) -> {}",
+            item.locked_package.slug,
+            item.locked_package.kind,
+            item.locked_package.version_number,
+            item.locked_package.installed_path.display()
+        );
+    }
+
+    let copied_packages = local_packages_copied_from_sync_source(
+        sync_source,
+        &globals.server_dir,
+        &manifest.packages,
+        globals.dry_run,
+    )?;
+    for package in &copied_packages {
+        println!(
+            "  + {} {} ({}) -> {}",
+            package.slug,
+            package.kind,
+            package.version_number,
+            package.installed_path.display()
+        );
+    }
+
+    for package in manifest
+        .packages
+        .iter()
+        .filter(|package| package.source != REGISTRY_SOURCE)
+    {
+        if sync_source.is_none() {
+            println!(
+                "  ! skipped non-portable {} package {} from {}",
+                package.kind, package.slug, package.source
+            );
+        }
+    }
+
+    if globals.dry_run {
+        println!("Dry run: no files changed.");
+        return Ok(());
+    }
+
+    if !config_exists {
+        write_server_config(&globals.server_dir, &config)?;
+    }
+    validate_install_plan(&globals.server_dir, &lockfile, &plan)?;
+    let cache = cache_dir()?;
+    apply_install_plan(
+        &globals.server_dir,
+        &mut lockfile,
+        client.http_client(),
+        &cache,
+        plan,
+    )?;
+    for package in copied_packages {
+        lockfile.upsert_package(package);
+    }
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(&globals.server_dir, "restore manifest")?;
+    println!("Restore complete.");
+    Ok(())
+}
+
+fn plan_registry_restore<S: ProjectSource>(
+    source: &S,
+    config: &ServerConfig,
+    lockfile: &LockFile,
+    packages: &[LockedPackage],
+    channel: ReleaseChannel,
+) -> Result<Vec<PlannedInstall>> {
+    let mut planned = Vec::new();
+    let mut planned_project_ids = HashSet::new();
+
+    for package in packages {
+        let mut resolver = InstallResolver::new(source, config, lockfile, true, channel);
+        let package_plan = resolver.resolve(
+            &package.project_id,
+            Some(package.kind),
+            Some(&package.version_id),
+            package.installed_as_dependency,
+        )?;
+        for item in package_plan {
+            if planned_project_ids.insert(item.locked_package.project_id.clone()) {
+                planned.push(item);
+            }
+        }
+    }
+
+    Ok(planned)
+}
+
+fn local_packages_copied_from_sync_source(
+    sync_source: Option<&Path>,
+    target_server_dir: &Path,
+    packages: &[LockedPackage],
+    dry_run: bool,
+) -> Result<Vec<LockedPackage>> {
+    let Some(source_server_dir) = sync_source else {
+        return Ok(Vec::new());
+    };
+
+    let mut copied = Vec::new();
+    for package in packages
+        .iter()
+        .filter(|package| package.source != REGISTRY_SOURCE)
+    {
+        let source_path = source_server_dir.join(&package.installed_path);
+        if !source_path.is_file() {
+            println!(
+                "  ! skipped {} because source file is missing: {}",
+                package.slug,
+                package.installed_path.display()
+            );
+            continue;
+        }
+        let target_path = target_server_dir.join(&package.installed_path);
+        if !dry_run {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent).at(parent)?;
+            }
+            fs::copy(&source_path, &target_path).at(&target_path)?;
+        }
+        copied.push(package.clone());
+    }
+
+    Ok(copied)
+}
+
+fn plan_import_existing<S: ProjectSource>(
+    source: &S,
+    server_dir: &Path,
+    config: &ServerConfig,
+    lockfile: &LockFile,
+) -> Result<ImportPlan> {
+    let mut plan = ImportPlan::default();
+    for (kind, directory) in [
+        (ContentKind::Mod, &config.paths.mods),
+        (ContentKind::Plugin, &config.paths.plugins),
+        (ContentKind::Datapack, &config.paths.datapacks),
+    ] {
+        if !config.server_type.supports(kind) {
+            continue;
+        }
+        let absolute = server_dir.join(directory);
+        if !absolute.exists() {
+            continue;
+        }
+
+        for entry in fs::read_dir(&absolute).at(&absolute)? {
+            let entry = entry.at(&absolute)?;
+            let path = entry.path();
+            if !path.is_file() || !is_supported_local_artifact(&path, kind) {
+                continue;
+            }
+            let relative = directory.join(entry.file_name());
+            if lockfile
+                .packages
+                .iter()
+                .any(|package| package.installed_path == relative)
+            {
+                continue;
+            }
+
+            match import_package_from_file(source, config, &path, relative.clone(), kind)? {
+                Some(package) => plan.matched.push(package),
+                None => plan.unmatched.push(relative),
+            }
+        }
+    }
+    plan.matched
+        .sort_by(|left, right| left.slug.cmp(&right.slug));
+    plan.unmatched.sort();
+    Ok(plan)
+}
+
+fn import_package_from_file<S: ProjectSource>(
+    source: &S,
+    config: &ServerConfig,
+    path: &Path,
+    installed_path: PathBuf,
+    kind: ContentKind,
+) -> Result<Option<LockedPackage>> {
+    let hashes = local_file_hashes(path)?;
+    let Some(sha512) = hashes.get("sha512") else {
+        return Ok(None);
+    };
+    let Some(version) = source.get_version_from_hash(sha512, "sha512")? else {
+        return Ok(None);
+    };
+    let project = source.get_project(&version.project_id)?;
+    let filename = installed_path
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .ok_or_else(|| MinecliError::message("imported file has no valid filename"))?
+        .to_owned();
+    let dependencies = version
+        .dependencies
+        .iter()
+        .filter(|dependency| dependency.dependency_type == DependencyType::Required)
+        .filter_map(|dependency| dependency.project_id.clone())
+        .collect::<Vec<_>>();
+
+    Ok(Some(LockedPackage {
+        source: REGISTRY_SOURCE.to_owned(),
+        project_id: project.id,
+        slug: project.slug.clone(),
+        title: project.title,
+        kind,
+        loader: config
+            .server_type
+            .modrinth_loader(kind)
+            .map(ToOwned::to_owned),
+        version_id: version.id,
+        version_number: version.version_number,
+        filename,
+        hashes,
+        installed_path,
+        dependencies,
+        installed_as_dependency: false,
+    }))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OutdatedPackage {
     source: String,
@@ -1864,6 +2224,52 @@ mod tests {
     }
 
     #[test]
+    fn import_planning_matches_existing_file_by_sha512_hash() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("mods")).unwrap();
+        let file_path = temp.path().join("mods/root.jar");
+        std::fs::write(&file_path, b"root-jar").unwrap();
+        let hashes = super::local_file_hashes(&file_path).unwrap();
+        let source = MockSource::new().with_project(project("root")).with_hash(
+            hashes.get("sha512").unwrap(),
+            version("root-version", "root", "1.0.0", vec![]),
+        );
+        let config = config();
+
+        let plan = super::plan_import_existing(&source, temp.path(), &config, &LockFile::default())
+            .unwrap();
+
+        assert_eq!(plan.matched.len(), 1);
+        assert_eq!(plan.matched[0].slug, "root");
+        assert_eq!(
+            plan.matched[0].installed_path,
+            PathBuf::from("mods/root.jar")
+        );
+        assert!(plan.unmatched.is_empty());
+    }
+
+    #[test]
+    fn export_manifest_contains_server_config_and_lockfile_packages() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = config();
+        let package = package("root", vec![], false);
+        crate::core::manifest::write_server_config(temp.path(), &config).unwrap();
+        crate::core::lockfile::write_lockfile(
+            temp.path(),
+            &LockFile {
+                packages: vec![package.clone()],
+            },
+        )
+        .unwrap();
+
+        let manifest = super::export_manifest_from_server(temp.path()).unwrap();
+
+        assert_eq!(manifest.format_version, 1);
+        assert_eq!(manifest.server, config);
+        assert_eq!(manifest.packages, vec![package]);
+    }
+
+    #[test]
     fn server_config_validation_rejects_unsafe_paths() {
         let mut config = config();
         config.paths.mods = PathBuf::from("/tmp/mods");
@@ -1995,6 +2401,7 @@ mod tests {
         projects: HashMap<String, Project>,
         versions: HashMap<String, Vec<ProjectVersion>>,
         versions_by_id: HashMap<String, ProjectVersion>,
+        versions_by_hash: HashMap<String, ProjectVersion>,
     }
 
     impl MockSource {
@@ -2013,6 +2420,11 @@ mod tests {
                     .insert(version.id.clone(), version.clone());
             }
             self.versions.insert(project_id.to_owned(), versions);
+            self
+        }
+
+        fn with_hash(mut self, hash: &str, version: ProjectVersion) -> Self {
+            self.versions_by_hash.insert(hash.to_owned(), version);
             self
         }
     }
@@ -2039,6 +2451,14 @@ mod tests {
                 .get(version_id)
                 .cloned()
                 .ok_or_else(|| crate::error::MinecliError::message(format!("missing {version_id}")))
+        }
+
+        fn get_version_from_hash(
+            &self,
+            hash: &str,
+            _algorithm: &str,
+        ) -> crate::error::Result<Option<ProjectVersion>> {
+            Ok(self.versions_by_hash.get(hash).cloned())
         }
     }
 

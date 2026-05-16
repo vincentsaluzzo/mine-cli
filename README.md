@@ -19,6 +19,10 @@ cargo run -- --path /srv/minecraft/survival search fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival install --file ./mods/example.jar --kind mod
 cargo run -- --path /srv/minecraft/survival install --folder ./mods-to-install --kind mod
+cargo run -- --path /srv/minecraft/survival import --dry-run
+cargo run -- --path /srv/minecraft/survival export --output survival.minecli.toml
+cargo run -- --path /srv/minecraft/staging restore survival.minecli.toml
+cargo run -- --path /srv/minecraft/staging sync /srv/minecraft/survival
 cargo run -- --path /srv/minecraft/survival list
 cargo run -- --path /srv/minecraft/survival outdated
 cargo run -- --path /srv/minecraft/survival --dry-run update --all
@@ -89,6 +93,25 @@ cargo run -- --server survival install --file ./datapack.zip --kind datapack
 ```
 
 Local installs are copied into the server's configured `mods`, `plugins`, or datapacks directory and tracked in `.minecli/lock.toml` with SHA-512/SHA-1 hashes.
+
+## Import, Export, And Sync
+
+Existing server folders can be imported into MineCLI. Files are matched to source metadata by hash when possible; unmatched files stay unmanaged and visible in `status`.
+
+```bash
+cargo run -- --server survival import --dry-run
+cargo run -- --server survival import
+```
+
+MineCLI can also export a portable manifest, restore registry-backed packages into another server, or sync another local server's manifest and local files:
+
+```bash
+cargo run -- --server survival export --output survival.minecli.toml
+cargo run -- --path /srv/minecraft/staging restore survival.minecli.toml
+cargo run -- --path /srv/minecraft/staging sync /srv/minecraft/survival
+```
+
+Local file and folder installs are copied during `sync` when the source server folder is available. Plain manifest `restore` skips non-portable local packages.
 
 ## Updates
 

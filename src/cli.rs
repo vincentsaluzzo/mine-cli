@@ -85,6 +85,23 @@ pub enum Command {
         #[arg(long, default_value_t = 10, help = "Maximum number of results")]
         limit: usize,
     },
+    /// Import existing files from mods, plugins, and datapack folders.
+    Import,
+    /// Export a portable MineCLI manifest.
+    Export {
+        #[arg(short, long, value_name = "PATH", help = "Write manifest to a file")]
+        output: Option<PathBuf>,
+    },
+    /// Restore registry-backed packages from an exported manifest.
+    Restore {
+        #[arg(value_name = "MANIFEST")]
+        manifest: PathBuf,
+    },
+    /// Sync another server's MineCLI manifest into this server.
+    Sync {
+        #[arg(value_name = "SOURCE_SERVER")]
+        source: PathBuf,
+    },
     /// Install a package into the server folder.
     Install {
         project: Option<String>,
