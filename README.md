@@ -68,6 +68,7 @@ The implementation roadmap is tracked in:
 
 - [PROJECT_PLAN.md](PROJECT_PLAN.md)
 - [TASKS.md](TASKS.md)
+- [docs/SOURCES.md](docs/SOURCES.md)
 
 ## Server Registry
 

@@ -21,6 +21,7 @@ use crate::core::manifest::{load_server_config, write_server_config};
 use crate::core::server::{ContentKind, ServerType, content_kind_from_project_type, detect_server};
 use crate::error::{IoResultExt, MinecliError, Result};
 use crate::fsops::{cache_dir, copy_verified_download, verify_file_hash};
+use crate::sources::is_registry_source;
 use crate::sources::modrinth::{
     DependencyType, ModrinthClient, ModrinthFile, ProjectSource, ProjectVersion, ReleaseChannel,
     SearchParams, select_version, version_matches_server,
@@ -1018,9 +1019,13 @@ fn package_metadata_issues(lockfile: &LockFile, verbose: bool) -> Vec<String> {
     for package in lockfile
         .packages
         .iter()
-        .filter(|package| package.source == REGISTRY_SOURCE)
+        .filter(|package| is_registry_source(&package.source))
     {
-        let project = match client.get_project(&package.project_id) {
+        if package.source != REGISTRY_SOURCE {
+            skipped += 1;
+            continue;
+        }
+        let project = match client.get_project(package.source_project_id_or_project_id()) {
             Ok(project) => project,
             Err(_) => {
                 skipped += 1;
@@ -1200,11 +1205,13 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         let locked_package = LockedPackage {
             source: REGISTRY_SOURCE.to_owned(),
             project_id: project.id.clone(),
+            source_project_id: Some(project.id.clone()),
             slug: project.slug.clone(),
             title: project.title.clone(),
             kind,
             loader,
             version_id: version.id.clone(),
+            source_version_id: Some(version.id.clone()),
             version_number: version.version_number.clone(),
             filename: file.filename.clone(),
             hashes: file.hashes.clone(),
@@ -1517,7 +1524,7 @@ fn plan_registry_restore<S: ProjectSource>(
     for package in packages {
         let mut resolver = InstallResolver::new(source, config, lockfile, true, channel);
         let package_plan = resolver.resolve(
-            &package.project_id,
+            package.source_project_id_or_project_id(),
             Some(package.kind),
             Some(&package.version_id),
             package.installed_as_dependency,
@@ -1645,7 +1652,8 @@ fn import_package_from_file<S: ProjectSource>(
 
     Ok(Some(LockedPackage {
         source: REGISTRY_SOURCE.to_owned(),
-        project_id: project.id,
+        project_id: project.id.clone(),
+        source_project_id: Some(project.id),
         slug: project.slug.clone(),
         title: project.title,
         kind,
@@ -1653,7 +1661,8 @@ fn import_package_from_file<S: ProjectSource>(
             .server_type
             .modrinth_loader(kind)
             .map(ToOwned::to_owned),
-        version_id: version.id,
+        version_id: version.id.clone(),
+        source_version_id: Some(version.id),
         version_number: version.version_number,
         filename,
         hashes,
@@ -1729,7 +1738,7 @@ fn latest_compatible_version<S: ProjectSource>(
             .map(ToOwned::to_owned)
     });
     let versions = source.get_project_versions(
-        &package.project_id,
+        package.source_project_id_or_project_id(),
         &loader.into_iter().collect::<Vec<_>>(),
         std::slice::from_ref(&config.minecraft_version),
     )?;
@@ -1788,7 +1797,7 @@ fn plan_registry_updates<S: ProjectSource>(
     for package in selected {
         let mut resolver = InstallResolver::new(source, config, lockfile, true, channel);
         let package_plan = resolver.resolve(
-            &package.project_id,
+            package.source_project_id_or_project_id(),
             Some(package.kind),
             None,
             package.installed_as_dependency,
@@ -1901,6 +1910,7 @@ fn planned_local_file(
         locked_package: LockedPackage {
             source: source.to_owned(),
             project_id: format!("local:{}", slug),
+            source_project_id: Some(slug.clone()),
             slug: slug.clone(),
             title: slug,
             kind,
@@ -1909,6 +1919,7 @@ fn planned_local_file(
                 .modrinth_loader(kind)
                 .map(ToOwned::to_owned),
             version_id: "local".to_owned(),
+            source_version_id: Some("local".to_owned()),
             version_number: "local".to_owned(),
             filename: filename.clone(),
             hashes,
@@ -2115,11 +2126,13 @@ mod tests {
         LockedPackage {
             source: "modrinth".to_owned(),
             project_id: project_id.to_owned(),
+            source_project_id: Some(project_id.to_owned()),
             slug: project_id.to_owned(),
             title: project_id.to_owned(),
             kind: ContentKind::Mod,
             loader: Some("fabric".to_owned()),
             version_id: "version".to_owned(),
+            source_version_id: Some("version".to_owned()),
             version_number: "1.0.0".to_owned(),
             filename: format!("{project_id}.jar"),
             hashes: BTreeMap::new(),

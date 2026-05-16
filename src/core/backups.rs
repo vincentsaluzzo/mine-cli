@@ -252,11 +252,13 @@ mod tests {
         LockedPackage {
             source: "modrinth".to_owned(),
             project_id: project_id.to_owned(),
+            source_project_id: Some(project_id.to_owned()),
             slug: project_id.to_owned(),
             title: project_id.to_owned(),
             kind: ContentKind::Mod,
             loader: Some("fabric".to_owned()),
             version_id: version.to_owned(),
+            source_version_id: Some(version.to_owned()),
             version_number: version.to_owned(),
             filename: PathBuf::from(path)
                 .file_name()

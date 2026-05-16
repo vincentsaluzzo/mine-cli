@@ -270,12 +270,12 @@ Goal: support broader workflows beyond direct registry installation.
 
 - [x] Support local file installs.
 - [x] Support local folder installs.
-- [ ] Evaluate Hangar support for Paper ecosystem packages.
-- [ ] Evaluate CurseForge support and API constraints.
-- [ ] Define a minimal source trait or interface.
-- [ ] Add source priority rules.
-- [ ] Support source-specific package IDs in the lockfile.
-- [ ] Add tests for multi-source resolution.
+- [x] Evaluate Hangar support for Paper ecosystem packages.
+- [x] Evaluate CurseForge support and API constraints.
+- [x] Define a minimal source trait or interface.
+- [x] Add source priority rules.
+- [x] Support source-specific package IDs in the lockfile.
+- [x] Add tests for multi-source resolution.
 
 ### Modpack Support
 

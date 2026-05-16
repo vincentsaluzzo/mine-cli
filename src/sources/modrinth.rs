@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::server::{ContentKind, ServerType};
 use crate::error::Result;
+use crate::sources::{PackageSource, SourceId};
 
 const DEFAULT_BASE_URL: &str = "https://api.modrinth.com/v2";
 
@@ -166,6 +167,12 @@ impl ModrinthClient {
             .json()?;
         *self.project_type_cache.lock().expect("project type cache") = Some(tags.clone());
         Ok(tags)
+    }
+}
+
+impl PackageSource for ModrinthClient {
+    fn source_id(&self) -> SourceId {
+        SourceId::Modrinth
     }
 }
 
