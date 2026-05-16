@@ -63,25 +63,25 @@ fn assert_success(output: &Output) {
     );
 }
 
-#[ignore = "downloads real server jars and Modrinth packages"]
+#[ignore = "downloads real server jars and packages from external sources"]
 #[test]
 fn live_fabric_server_flow() {
     run_live_flow(ServerFlavor::Fabric);
 }
 
-#[ignore = "downloads real server jars and Modrinth packages"]
+#[ignore = "downloads real server jars and packages from external sources"]
 #[test]
 fn live_purpur_server_flow() {
     run_live_flow(ServerFlavor::Purpur);
 }
 
-#[ignore = "downloads real server jars and Modrinth packages"]
+#[ignore = "downloads real server jars and packages from external sources"]
 #[test]
 fn live_forge_server_flow() {
     run_live_flow(ServerFlavor::Forge);
 }
 
-#[ignore = "downloads real server jars and Modrinth packages"]
+#[ignore = "downloads real server jars and packages from external sources"]
 #[test]
 fn live_neoforge_server_flow() {
     run_live_flow(ServerFlavor::NeoForge);
@@ -124,7 +124,7 @@ fn run_live_flow(flavor: ServerFlavor) {
     let (project, kind, target_dir) = flavor.package();
     log_step(
         flavor,
-        format!("installing Modrinth project `{project}` as `{kind}`"),
+        format!("installing package `{project}` as `{kind}`"),
     );
     let install = minecli(
         &server_dir,

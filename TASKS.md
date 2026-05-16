@@ -67,6 +67,7 @@ Goal: manage one Minecraft server from inside its folder.
 - [x] Implement project type tag fetching.
 - [x] Implement response caching where useful.
 - [x] Add tests with mocked Modrinth responses.
+- [x] Keep CLI help and user-facing command language package-source agnostic.
 
 ### Search Command
 
@@ -217,12 +218,13 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 
 ### Better Detection
 
-- [ ] Detect server type from common jar names.
-- [ ] Detect server type from startup scripts when possible.
-- [ ] Detect Minecraft version from server jar metadata when possible.
-- [ ] Detect world folder from `server.properties`.
-- [ ] Detect datapack path from configured world name.
-- [ ] Add tests for detection heuristics.
+- [x] Detect server type from common jar names.
+- [x] Detect server type from startup scripts when possible.
+- [x] Detect Minecraft version from server jar metadata when possible.
+- [x] Detect world folder from `server.properties`.
+- [x] Detect datapack path from configured world name.
+- [x] Add tests for detection heuristics.
+- [x] Document compatibility with TheRemote/Legendary-Minecraft-Purpur-Geyser Docker volume layout.
 
 ### Editing
 
@@ -244,7 +246,7 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 
 ## Phase 3: Ecosystem Expansion
 
-Goal: support broader workflows beyond direct Modrinth installation.
+Goal: support broader workflows beyond direct registry installation.
 
 ### Import Existing Servers
 

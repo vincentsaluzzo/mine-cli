@@ -8,7 +8,7 @@ MineCLI is a command-line tool for Minecraft server administrators. It helps ins
 - datapacks
 - plugins
 
-The first package source should be Modrinth, using its public listings and API metadata instead of maintaining a custom package database.
+MineCLI should be package-source agnostic. The first package source should be Modrinth, using its public listings and API metadata instead of maintaining a custom package database, but the CLI model should also leave room for local files, local folders, and other registries.
 
 ## Product Direction
 
@@ -97,9 +97,25 @@ Global state should be optional:
 
 `config.toml` stores user preferences. `servers.toml` maps friendly server names to folders. The cache stores downloaded files by hash.
 
+## Package Sources
+
+MineCLI commands should use generic language such as package, source, install, search, and remove. They should not expose Modrinth as the product model.
+
+Initial sources:
+
+- Modrinth registry source for search, metadata, dependency resolution, and downloads.
+
+Future sources:
+
+- local file source for installing a specific `.jar` or datapack archive
+- local folder source for installing or importing a set of packages
+- additional registries such as Hangar or CurseForge if feasible
+
+The lockfile should always record the concrete source used for each package.
+
 ## Modrinth Integration
 
-Modrinth should be treated as the first package registry.
+Modrinth should be treated as the first package registry implementation, not the only possible source.
 
 MineCLI should use Modrinth data for:
 
@@ -207,7 +223,7 @@ Installing a package should follow a deterministic plan:
 1. Resolve the target server folder.
 2. Load `.minecli/server.toml`.
 3. Detect or validate server type.
-4. Search Modrinth by slug or query.
+4. Resolve the package through the selected source. Initially this means searching Modrinth by slug or query.
 5. Filter by Minecraft version, loader, project type, and server-side support.
 6. Select a compatible version.
 7. Resolve required dependencies recursively.
@@ -239,7 +255,7 @@ MineCLI should not remove manually installed files unless the user passes an exp
 Updating should:
 
 1. Read the lockfile.
-2. Query Modrinth for each package's latest compatible version.
+2. Query the package source for each package's latest compatible version.
 3. Compare current version IDs with available version IDs.
 4. Build an update plan.
 5. Include dependency changes.
@@ -313,7 +329,7 @@ src/
     prompts.rs
 ```
 
-Keep the package source abstraction small at first. Avoid designing a full package manager framework before the Modrinth implementation proves the shape.
+Keep the package source abstraction small at first. Avoid designing a full package manager framework before the Modrinth implementation proves the shape, but keep command names and output source-neutral.
 
 ## Roadmap Summary
 
@@ -344,4 +360,3 @@ Phase 3 should broaden the ecosystem:
 - modpack support
 - server process hooks
 - log-based compatibility diagnostics
-

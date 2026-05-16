@@ -9,9 +9,7 @@ use crate::core::history;
 use crate::core::lockfile::{LockFile, LockedPackage, load_lockfile, write_lockfile};
 use crate::core::manifest::{ServerConfig, minecli_dir, server_file};
 use crate::core::manifest::{load_server_config, write_server_config};
-use crate::core::server::{
-    ContentKind, ServerType, content_kind_from_project_type, detect_server_type, detect_world_name,
-};
+use crate::core::server::{ContentKind, ServerType, content_kind_from_project_type, detect_server};
 use crate::error::{IoResultExt, MinecliError, Result};
 use crate::fsops::{cache_dir, copy_verified_download, verify_file_hash};
 use crate::sources::modrinth::{
@@ -58,7 +56,7 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
 fn init(
     globals: &GlobalOptions,
     server_type: Option<ServerType>,
-    minecraft_version: String,
+    minecraft_version: Option<String>,
     name: Option<String>,
     force: bool,
 ) -> Result<()> {
@@ -73,11 +71,16 @@ fn init(
         )));
     }
 
-    let detected_type = match server_type {
-        Some(server_type) => server_type,
-        None => detect_server_type(server_dir)?,
-    };
-    let world = detect_world_name(server_dir)?;
+    let detection = detect_server(server_dir)?;
+    let detected_type = server_type.unwrap_or(detection.server_type);
+    let minecraft_version = minecraft_version
+        .or(detection.minecraft_version)
+        .ok_or_else(|| {
+            MinecliError::message(
+                "could not detect Minecraft version; pass --minecraft <version>".to_owned(),
+            )
+        })?;
+    let world = detection.world;
     let name = name.unwrap_or_else(|| {
         server_dir
             .file_name()
@@ -153,7 +156,7 @@ fn search(
     let response = client.search(&params)?;
 
     if response.hits.is_empty() {
-        println!("No matching Modrinth projects found.");
+        println!("No matching packages found.");
         return Ok(());
     }
 
@@ -426,7 +429,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         let project = self.client.get_project(project_ref)?;
         if project.server_side == "unsupported" {
             return Err(MinecliError::message(format!(
-                "{} is marked as unsupported on servers by Modrinth",
+                "{} is marked as unsupported on servers by its package source",
                 project.slug
             )));
         }

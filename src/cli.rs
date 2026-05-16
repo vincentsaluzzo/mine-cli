@@ -57,7 +57,7 @@ pub enum Command {
         server_type: Option<ServerType>,
 
         #[arg(long, help = "Minecraft version used by this server")]
-        minecraft: String,
+        minecraft: Option<String>,
 
         #[arg(long, help = "Friendly server name")]
         name: Option<String>,
@@ -67,7 +67,7 @@ pub enum Command {
     },
     /// Show local server state and package counts.
     Status,
-    /// Search Modrinth for server-side projects.
+    /// Search available server-side packages.
     Search {
         query: String,
 
@@ -77,7 +77,7 @@ pub enum Command {
         #[arg(long, default_value_t = 10, help = "Maximum number of results")]
         limit: usize,
     },
-    /// Install a Modrinth project into the server folder.
+    /// Install a package into the server folder.
     Install {
         project: String,
 

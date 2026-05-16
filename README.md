@@ -2,7 +2,7 @@
 
 MineCLI is a command-line tool for Minecraft server administrators. Its goal is to install, update, list, edit, and remove server-side mods, datapacks, and plugins across multiple Minecraft server types.
 
-The project is intentionally starting with Modrinth as the first package source, so package discovery and version metadata come from an existing ecosystem instead of a custom database.
+The CLI is designed to be package-source agnostic. Modrinth is the first implemented source for discovery and version metadata, but commands should stay generic enough to support local files, folders, and other registries later.
 
 ## Current Status
 
@@ -14,6 +14,7 @@ The current executable supports:
 cargo run -- --help
 cargo run -- --version
 cargo run -- --path /srv/minecraft/survival init --type fabric --minecraft 1.21.5
+cargo run -- --path /srv/minecraft/survival init
 cargo run -- --path /srv/minecraft/survival search fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival list
@@ -28,6 +29,23 @@ MineCLI stores per-server state in `.minecli/` inside the server folder:
   server.toml
   lock.toml
   history.log
+```
+
+## Compatible Server Layouts
+
+MineCLI can initialize directly from standard Minecraft server folders and from the Docker volume layout used by [TheRemote/Legendary-Minecraft-Purpur-Geyser](https://github.com/TheRemote/Legendary-Minecraft-Purpur-Geyser).
+
+For that image, MineCLI detects:
+
+- `purpur.jar` and `purpur.yml` as a Purpur server
+- `version_history.json`, `versions/`, and `cache/` as version hints
+- `server.properties` `level-name` for the world/datapack path
+- `plugins/` as the plugin target
+
+Example:
+
+```bash
+cargo run -- --path /path/to/docker/volume/_data init --name survival
 ```
 
 The implementation roadmap is tracked in:
@@ -58,7 +76,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-Live integration tests are ignored by default because they download real Fabric, Purpur, Forge, and NeoForge server artifacts and install packages from Modrinth:
+Live integration tests are ignored by default because they download real Fabric, Purpur, Forge, and NeoForge server artifacts and install packages from external sources:
 
 ```bash
 cargo test --test live_server_flows -- --ignored --nocapture
