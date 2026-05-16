@@ -24,9 +24,17 @@ pub struct Cli {
         long,
         global = true,
         value_name = "PATH",
-        help = "Reserved config file override"
+        help = "MineCLI config directory"
     )]
     pub config: Option<PathBuf>,
+
+    #[arg(
+        long,
+        global = true,
+        value_name = "NAME",
+        help = "Registered server name"
+    )]
+    pub server: Option<String>,
 
     #[arg(
         long,
@@ -110,12 +118,29 @@ pub enum Command {
     },
     /// Check local folders, lockfile entries, and hashes.
     Doctor,
+    /// Manage globally registered server folders.
+    Servers {
+        #[command(subcommand)]
+        command: ServersCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ServersCommand {
+    /// List registered servers.
+    List,
+    /// Register a server folder.
+    Add { name: String, path: PathBuf },
+    /// Remove a registered server folder.
+    Remove { name: String },
+    /// Show one registered server folder.
+    Show { name: String },
 }
 
 #[derive(Debug, Clone)]
 pub struct GlobalOptions {
     pub server_dir: PathBuf,
-    pub config: Option<PathBuf>,
+    pub config_dir: PathBuf,
     pub dry_run: bool,
     pub yes: bool,
     pub verbose: bool,
@@ -123,20 +148,35 @@ pub struct GlobalOptions {
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
-    let server_dir = match cli.path {
-        Some(path) => path,
-        None => std::env::current_dir().map_err(|source| crate::error::MinecliError::Io {
-            path: PathBuf::from("."),
-            source,
-        })?,
-    };
+    let config_dir = crate::config::config_dir(cli.config.as_deref())?;
+    let server_dir = resolve_server_dir(cli.path, cli.server.as_deref(), &config_dir)?;
     let globals = GlobalOptions {
         server_dir,
-        config: cli.config,
+        config_dir,
         dry_run: cli.dry_run,
         yes: cli.yes,
         verbose: cli.verbose,
     };
 
     commands::execute(globals, cli.command)
+}
+
+fn resolve_server_dir(
+    path: Option<PathBuf>,
+    server: Option<&str>,
+    config_dir: &std::path::Path,
+) -> Result<PathBuf> {
+    if let Some(path) = path {
+        return Ok(path);
+    }
+
+    if let Some(server) = server {
+        let registry = crate::config::load_server_registry(config_dir)?;
+        return Ok(registry.get(server)?.path.clone());
+    }
+
+    std::env::current_dir().map_err(|source| crate::error::MinecliError::Io {
+        path: PathBuf::from("."),
+        source,
+    })
 }

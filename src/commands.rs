@@ -4,7 +4,11 @@ use std::path::{Path, PathBuf};
 
 use reqwest::blocking::Client;
 
-use crate::cli::{Command, GlobalOptions};
+use crate::cli::{Command, GlobalOptions, ServersCommand};
+use crate::config::{
+    load_global_config, load_server_registry, servers_file, write_global_config,
+    write_server_registry,
+};
 use crate::core::history;
 use crate::core::lockfile::{LockFile, LockedPackage, load_lockfile, write_lockfile};
 use crate::core::manifest::{ServerConfig, minecli_dir, server_file};
@@ -20,9 +24,7 @@ use crate::sources::modrinth::{
 pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
     if globals.verbose {
         eprintln!("server path: {}", globals.server_dir.display());
-        if let Some(config) = &globals.config {
-            eprintln!("config override: {}", config.display());
-        }
+        eprintln!("config dir: {}", globals.config_dir.display());
         if globals.yes {
             eprintln!("automatic yes enabled");
         }
@@ -50,7 +52,87 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             remove_orphans,
         } => remove(&globals, project, remove_orphans),
         Command::Doctor => doctor(&globals),
+        Command::Servers { command } => servers(&globals, command),
     }
+}
+
+fn servers(globals: &GlobalOptions, command: ServersCommand) -> Result<()> {
+    match command {
+        ServersCommand::List => servers_list(globals),
+        ServersCommand::Add { name, path } => servers_add(globals, name, path),
+        ServersCommand::Remove { name } => servers_remove(globals, name),
+        ServersCommand::Show { name } => servers_show(globals, name),
+    }
+}
+
+fn servers_list(globals: &GlobalOptions) -> Result<()> {
+    let registry = load_server_registry(&globals.config_dir)?;
+    if registry.servers.is_empty() {
+        println!("No servers registered.");
+        return Ok(());
+    }
+
+    println!("{:<20} Path", "Name");
+    for (name, server) in registry.servers {
+        println!("{:<20} {}", name, server.path.display());
+    }
+    Ok(())
+}
+
+fn servers_add(globals: &GlobalOptions, name: String, path: PathBuf) -> Result<()> {
+    if !path.exists() {
+        return Err(MinecliError::message(format!(
+            "server path does not exist: {}",
+            path.display()
+        )));
+    }
+    if !path.is_dir() {
+        return Err(MinecliError::message(format!(
+            "server path is not a directory: {}",
+            path.display()
+        )));
+    }
+
+    let mut registry = load_server_registry(&globals.config_dir)?;
+    registry.add(name.clone(), path.clone())?;
+    write_server_registry(&globals.config_dir, &registry)?;
+
+    let mut config = load_global_config(&globals.config_dir)?;
+    if config.default_server.is_none() {
+        config.default_server = Some(name.clone());
+        write_global_config(&globals.config_dir, &config)?;
+    }
+
+    println!(
+        "Registered server `{name}` at {}",
+        path.canonicalize().unwrap_or(path).display()
+    );
+    println!("Registry: {}", servers_file(&globals.config_dir).display());
+    Ok(())
+}
+
+fn servers_remove(globals: &GlobalOptions, name: String) -> Result<()> {
+    let mut registry = load_server_registry(&globals.config_dir)?;
+    let removed = registry.remove(&name)?;
+    write_server_registry(&globals.config_dir, &registry)?;
+
+    let mut config = load_global_config(&globals.config_dir)?;
+    if config.default_server.as_deref() == Some(&name) {
+        config.default_server = None;
+        write_global_config(&globals.config_dir, &config)?;
+    }
+
+    println!("Removed server `{name}` at {}", removed.path.display());
+    Ok(())
+}
+
+fn servers_show(globals: &GlobalOptions, name: String) -> Result<()> {
+    let registry = load_server_registry(&globals.config_dir)?;
+    let server = registry.get(&name)?;
+    println!("Name: {name}");
+    println!("Path: {}", server.path.display());
+    println!("Exists: {}", server.path.exists());
+    Ok(())
 }
 
 fn init(

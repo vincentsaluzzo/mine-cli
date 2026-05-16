@@ -175,23 +175,23 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 
 ### Global Config
 
-- [ ] Define `~/.config/minecli/config.toml`.
-- [ ] Define `~/.config/minecli/servers.toml`.
-- [ ] Implement global config loading.
-- [ ] Implement global config writing.
-- [ ] Support platform-correct config paths.
-- [ ] Add tests for global config behavior.
+- [x] Define `~/.config/minecli/config.toml`.
+- [x] Define `~/.config/minecli/servers.toml`.
+- [x] Implement global config loading.
+- [x] Implement global config writing.
+- [x] Support platform-correct config paths.
+- [x] Add tests for global config behavior.
 
 ### Server Registry
 
-- [ ] Implement `minecli servers list`.
-- [ ] Implement `minecli servers add <name> <path>`.
-- [ ] Implement `minecli servers remove <name>`.
-- [ ] Implement `minecli servers show <name>`.
-- [ ] Support `minecli --server <name> <command>`.
-- [ ] Detect duplicate names.
-- [ ] Detect missing server paths.
-- [ ] Add tests for registry commands.
+- [x] Implement `minecli servers list`.
+- [x] Implement `minecli servers add <name> <path>`.
+- [x] Implement `minecli servers remove <name>`.
+- [x] Implement `minecli servers show <name>`.
+- [x] Support `minecli --server <name> <command>`.
+- [x] Detect duplicate names.
+- [x] Detect missing server paths.
+- [x] Add tests for registry commands.
 
 ### Update And Outdated
 

@@ -20,6 +20,8 @@ cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind 
 cargo run -- --path /srv/minecraft/survival list
 cargo run -- --path /srv/minecraft/survival status
 cargo run -- --path /srv/minecraft/survival doctor
+cargo run -- servers add survival /srv/minecraft/survival
+cargo run -- --server survival status
 ```
 
 MineCLI stores per-server state in `.minecli/` inside the server folder:
@@ -52,6 +54,20 @@ The implementation roadmap is tracked in:
 
 - [PROJECT_PLAN.md](PROJECT_PLAN.md)
 - [TASKS.md](TASKS.md)
+
+## Server Registry
+
+MineCLI can remember server folders globally:
+
+```bash
+cargo run -- servers add survival /srv/minecraft/survival
+cargo run -- servers list
+cargo run -- servers show survival
+cargo run -- --server survival status
+cargo run -- servers remove survival
+```
+
+By default the registry is stored in the platform config directory as `servers.toml`. Use `--config <path>` or `MINECLI_CONFIG_DIR` to override the config directory.
 
 ## Development
 
