@@ -6,6 +6,7 @@ pub mod modrinth;
 #[serde(rename_all = "kebab-case")]
 pub enum SourceId {
     Modrinth,
+    ModrinthPack,
     Hangar,
     CurseForge,
     LocalFile,
@@ -16,6 +17,7 @@ impl SourceId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Modrinth => "modrinth",
+            Self::ModrinthPack => "modrinth-pack",
             Self::Hangar => "hangar",
             Self::CurseForge => "curseforge",
             Self::LocalFile => "local-file",
@@ -26,6 +28,7 @@ impl SourceId {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "modrinth" => Some(Self::Modrinth),
+            "modrinth-pack" => Some(Self::ModrinthPack),
             "hangar" => Some(Self::Hangar),
             "curseforge" => Some(Self::CurseForge),
             "local-file" => Some(Self::LocalFile),
@@ -37,6 +40,7 @@ impl SourceId {
     pub fn priority(self) -> u8 {
         match self {
             Self::Modrinth => 10,
+            Self::ModrinthPack => 15,
             Self::Hangar => 20,
             Self::CurseForge => 30,
             Self::LocalFile | Self::LocalFolder => 90,

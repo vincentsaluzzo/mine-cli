@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::Sha512;
 
-use crate::cli::{BackupsCommand, Command, GlobalOptions, ServersCommand};
+use crate::cli::{BackupsCommand, Command, GlobalOptions, ModpackCommand, ServersCommand};
 use crate::config::{
     load_global_config, load_server_registry, servers_file, write_global_config,
     write_server_registry,
@@ -18,14 +18,17 @@ use crate::core::history;
 use crate::core::lockfile::{LockFile, LockedPackage, load_lockfile, write_lockfile};
 use crate::core::manifest::{ServerConfig, minecli_dir, server_file};
 use crate::core::manifest::{load_server_config, write_server_config};
+use crate::core::modpack::{
+    ModrinthPackFile, copy_server_overrides, read_modrinth_pack, validate_relative_path,
+};
 use crate::core::server::{ContentKind, ServerType, content_kind_from_project_type, detect_server};
 use crate::error::{IoResultExt, MinecliError, Result};
 use crate::fsops::{cache_dir, copy_verified_download, verify_file_hash};
-use crate::sources::is_registry_source;
 use crate::sources::modrinth::{
     DependencyType, ModrinthClient, ModrinthFile, ProjectSource, ProjectVersion, ReleaseChannel,
     SearchParams, select_version, version_matches_server,
 };
+use crate::sources::{SourceId, is_registry_source};
 
 const REGISTRY_SOURCE: &str = "modrinth";
 
@@ -56,6 +59,7 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
         Command::Export { output } => export(&globals, output),
         Command::Restore { manifest } => restore(&globals, manifest),
         Command::Sync { source } => sync(&globals, source),
+        Command::Modpack { command } => modpack(&globals, command),
         Command::Install {
             project,
             kind,
@@ -108,6 +112,105 @@ fn backups(globals: &GlobalOptions, command: BackupsCommand) -> Result<()> {
     match command {
         BackupsCommand::List => backups_list(globals),
     }
+}
+
+fn modpack(globals: &GlobalOptions, command: ModpackCommand) -> Result<()> {
+    match command {
+        ModpackCommand::Inspect { path } => modpack_inspect(globals, path),
+        ModpackCommand::Install { path } => modpack_install(globals, path),
+    }
+}
+
+fn modpack_inspect(globals: &GlobalOptions, path: PathBuf) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let index = read_modrinth_pack(&path)?;
+
+    println!("Modpack: {}", index.name);
+    println!("Version: {}", index.version_id);
+    if let Some(summary) = &index.summary {
+        println!("Summary: {summary}");
+    }
+    if let Some(minecraft) = index.dependencies.get("minecraft") {
+        println!("Minecraft: {minecraft}");
+    }
+    if let Some(loader) = index.loader_dependency() {
+        println!("Loader: {loader}");
+    }
+
+    match index.validate_for_server(config.server_type, &config.minecraft_version) {
+        Ok(()) => println!("Server compatibility: compatible"),
+        Err(error) => println!("Server compatibility: {error}"),
+    }
+
+    println!(
+        "Required server files: {}",
+        index.required_server_files().len()
+    );
+    for file in index.required_server_files() {
+        println!("  + {}", file.path.display());
+    }
+    println!(
+        "Optional server files: {}",
+        index.optional_server_files().len()
+    );
+    for file in index.optional_server_files() {
+        println!("  ? {}", file.path.display());
+    }
+    Ok(())
+}
+
+fn modpack_install(globals: &GlobalOptions, path: PathBuf) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    let index = read_modrinth_pack(&path)?;
+    index.validate_for_server(config.server_type, &config.minecraft_version)?;
+
+    let mut plan = Vec::new();
+    for file in index.required_server_files() {
+        if let Some(item) = planned_modpack_file(&index.version_id, &index.name, file)? {
+            plan.push(item);
+        }
+    }
+    plan.sort_by(|left, right| {
+        left.locked_package
+            .installed_path
+            .cmp(&right.locked_package.installed_path)
+    });
+
+    if plan.is_empty() {
+        return Err(MinecliError::message(format!(
+            "{} has no required server-side package files MineCLI can install",
+            index.name
+        )));
+    }
+
+    print_install_plan(&plan, globals.dry_run);
+    let optional = index.optional_server_files();
+    if !optional.is_empty() {
+        println!("Optional server files skipped:");
+        for file in optional {
+            println!("  ? {}", file.path.display());
+        }
+    }
+    if globals.dry_run {
+        return Ok(());
+    }
+
+    validate_install_plan(&globals.server_dir, &lockfile, &plan)?;
+    let cache = cache_dir()?;
+    let client = reqwest::blocking::Client::new();
+    apply_install_plan(&globals.server_dir, &mut lockfile, &client, &cache, plan)?;
+    let copied_overrides = copy_server_overrides(&path, &globals.server_dir)?;
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(
+        &globals.server_dir,
+        format!("install modpack {}", index.name),
+    )?;
+    if copied_overrides > 0 {
+        println!("Copied {copied_overrides} override file(s).");
+    }
+    println!("Modpack install complete.");
+    Ok(())
 }
 
 fn backups_list(globals: &GlobalOptions) -> Result<()> {
@@ -1938,6 +2041,70 @@ fn planned_local_file(
     })
 }
 
+fn planned_modpack_file(
+    pack_version_id: &str,
+    pack_name: &str,
+    file: &ModrinthPackFile,
+) -> Result<Option<PlannedInstall>> {
+    validate_relative_path(&file.path)?;
+    let Some(kind) = file.content_kind() else {
+        println!(
+            "Skipping unsupported modpack file path: {}",
+            file.path.display()
+        );
+        return Ok(None);
+    };
+    let Some(url) = file.downloads.first() else {
+        return Err(MinecliError::message(format!(
+            "modpack file has no download URL: {}",
+            file.path.display()
+        )));
+    };
+    let filename = file.filename()?;
+    let project_slug = file
+        .path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(&filename)
+        .to_owned();
+    let source_project_id = format!("{pack_version_id}:{}", file.path.display());
+    let source_version_id = file
+        .hashes
+        .get("sha512")
+        .cloned()
+        .or_else(|| file.hashes.get("sha1").cloned())
+        .unwrap_or_else(|| source_project_id.clone());
+
+    Ok(Some(PlannedInstall {
+        version_name: pack_name.to_owned(),
+        locked_package: LockedPackage {
+            source: SourceId::ModrinthPack.as_str().to_owned(),
+            project_id: format!("{}:{source_project_id}", SourceId::ModrinthPack.as_str()),
+            source_project_id: Some(source_project_id),
+            slug: project_slug.clone(),
+            title: project_slug,
+            kind,
+            loader: None,
+            version_id: source_version_id.clone(),
+            source_version_id: Some(source_version_id),
+            version_number: pack_version_id.to_owned(),
+            filename: filename.clone(),
+            hashes: file.hashes.clone(),
+            installed_path: file.path.clone(),
+            dependencies: vec![],
+            installed_as_dependency: false,
+        },
+        file: ModrinthFile {
+            hashes: file.hashes.clone(),
+            url: url.clone(),
+            filename,
+            primary: true,
+            size: file.file_size,
+        },
+        installed_path: file.path.clone(),
+    }))
+}
+
 fn apply_local_install_plan(
     server_dir: &Path,
     lockfile: &mut LockFile,
@@ -2115,6 +2282,7 @@ mod tests {
     };
     use crate::core::lockfile::{LockFile, LockedPackage};
     use crate::core::manifest::ServerConfig;
+    use crate::core::modpack::{ModrinthPackEnv, ModrinthPackFile, SideSupport};
     use crate::core::server::ContentKind;
     use crate::core::server::ServerType;
     use crate::sources::modrinth::{
@@ -2345,6 +2513,32 @@ mod tests {
             PathBuf::from("mods/root.jar")
         );
         assert!(plan.unmatched.is_empty());
+    }
+
+    #[test]
+    fn modpack_planning_tracks_required_server_file_as_modrinth_pack_source() {
+        let file = ModrinthPackFile {
+            path: PathBuf::from("mods/server.jar"),
+            hashes: BTreeMap::from([("sha512".to_owned(), "abc".to_owned())]),
+            env: Some(ModrinthPackEnv {
+                client: Some(SideSupport::Required),
+                server: Some(SideSupport::Required),
+            }),
+            downloads: vec!["file:///tmp/server.jar".to_owned()],
+            file_size: 123,
+        };
+
+        let planned = super::planned_modpack_file("pack-version", "Test Pack", &file)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(planned.locked_package.source, "modrinth-pack");
+        assert_eq!(planned.locked_package.kind, ContentKind::Mod);
+        assert_eq!(
+            planned.locked_package.installed_path,
+            PathBuf::from("mods/server.jar")
+        );
+        assert_eq!(planned.file.url, "file:///tmp/server.jar");
     }
 
     #[test]

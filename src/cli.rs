@@ -105,6 +105,11 @@ pub enum Command {
         #[arg(value_name = "SOURCE_SERVER")]
         source: PathBuf,
     },
+    /// Inspect or install Modrinth modpack files.
+    Modpack {
+        #[command(subcommand)]
+        command: ModpackCommand,
+    },
     /// Install a package into the server folder.
     Install {
         project: Option<String>,
@@ -207,6 +212,20 @@ pub enum ServersCommand {
 pub enum BackupsCommand {
     /// List backup operations for this server.
     List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ModpackCommand {
+    /// Show server-side content from a .mrpack file.
+    Inspect {
+        #[arg(value_name = "MRPACK")]
+        path: PathBuf,
+    },
+    /// Install required server-side files from a .mrpack file.
+    Install {
+        #[arg(value_name = "MRPACK")]
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone)]

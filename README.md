@@ -24,6 +24,8 @@ cargo run -- --path /srv/minecraft/survival import --dry-run
 cargo run -- --path /srv/minecraft/survival export --output survival.minecli.toml
 cargo run -- --path /srv/minecraft/staging restore survival.minecli.toml
 cargo run -- --path /srv/minecraft/staging sync /srv/minecraft/survival
+cargo run -- --path /srv/minecraft/survival modpack inspect ./pack.mrpack
+cargo run -- --path /srv/minecraft/survival --dry-run modpack install ./pack.mrpack
 cargo run -- --path /srv/minecraft/survival list
 cargo run -- --path /srv/minecraft/survival outdated
 cargo run -- --path /srv/minecraft/survival --dry-run update --all
@@ -116,6 +118,18 @@ cargo run -- --path /srv/minecraft/staging sync /srv/minecraft/survival
 ```
 
 Local file and folder installs are copied during `sync` when the source server folder is available. Plain manifest `restore` skips non-portable local packages.
+
+## Modpacks
+
+MineCLI can inspect and install the required server-side files from Modrinth `.mrpack` files:
+
+```bash
+cargo run -- --server survival modpack inspect ./pack.mrpack
+cargo run -- --server survival --dry-run modpack install ./pack.mrpack
+cargo run -- --server survival modpack install ./pack.mrpack
+```
+
+Client-only packs are rejected. Optional server files are listed but skipped for now, and `overrides/` plus `server-overrides/` files are copied during install.
 
 ## Updates
 

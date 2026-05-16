@@ -279,11 +279,11 @@ Goal: support broader workflows beyond direct registry installation.
 
 ### Modpack Support
 
-- [ ] Investigate Modrinth modpack metadata.
-- [ ] Support installing server-compatible modpacks where possible.
-- [ ] Support extracting server-side package lists from modpacks.
-- [ ] Detect unsupported client-only modpacks.
-- [ ] Add tests for modpack parsing.
+- [x] Investigate Modrinth modpack metadata.
+- [x] Support installing server-compatible modpacks where possible.
+- [x] Support extracting server-side package lists from modpacks.
+- [x] Detect unsupported client-only modpacks.
+- [x] Add tests for modpack parsing.
 
 ### Server Process Hooks
 
