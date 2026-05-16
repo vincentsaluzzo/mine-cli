@@ -6,7 +6,7 @@ The CLI is designed to be package-source agnostic. Modrinth is the first impleme
 
 ## Current Status
 
-This repository is in Phase 1: local server MVP.
+This repository is in Phase 2: real server administration.
 
 The current executable supports:
 
@@ -20,6 +20,9 @@ cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind 
 cargo run -- --path /srv/minecraft/survival install --file ./mods/example.jar --kind mod
 cargo run -- --path /srv/minecraft/survival install --folder ./mods-to-install --kind mod
 cargo run -- --path /srv/minecraft/survival list
+cargo run -- --path /srv/minecraft/survival outdated
+cargo run -- --path /srv/minecraft/survival --dry-run update --all
+cargo run -- --path /srv/minecraft/survival update fabric-api
 cargo run -- --path /srv/minecraft/survival status
 cargo run -- --path /srv/minecraft/survival doctor
 cargo run -- servers add survival /srv/minecraft/survival
@@ -82,6 +85,18 @@ cargo run -- --server survival install --file ./datapack.zip --kind datapack
 ```
 
 Local installs are copied into the server's configured `mods`, `plugins`, or datapacks directory and tracked in `.minecli/lock.toml` with SHA-512/SHA-1 hashes.
+
+## Updates
+
+Registry-backed installs can be checked and updated against the latest compatible release for the server's Minecraft version and loader:
+
+```bash
+cargo run -- --server survival outdated
+cargo run -- --server survival --dry-run update --all
+cargo run -- --server survival update fabric-api
+```
+
+Local file and folder installs are tracked in the lockfile but intentionally skipped by update commands.
 
 ## Development
 

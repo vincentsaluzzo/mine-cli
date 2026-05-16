@@ -19,9 +19,11 @@ use crate::core::server::{ContentKind, ServerType, content_kind_from_project_typ
 use crate::error::{IoResultExt, MinecliError, Result};
 use crate::fsops::{cache_dir, copy_verified_download, verify_file_hash};
 use crate::sources::modrinth::{
-    DependencyType, ModrinthClient, ModrinthFile, ProjectSource, ReleaseChannel, SearchParams,
-    select_version, version_matches_server,
+    DependencyType, ModrinthClient, ModrinthFile, ProjectSource, ProjectVersion, ReleaseChannel,
+    SearchParams, select_version, version_matches_server,
 };
+
+const REGISTRY_SOURCE: &str = "modrinth";
 
 pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
     if globals.verbose {
@@ -62,6 +64,12 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             },
         ),
         Command::List { kind, json } => list(&globals, kind, json),
+        Command::Outdated { channel } => outdated(&globals, channel),
+        Command::Update {
+            project,
+            all,
+            channel,
+        } => update(&globals, project, all, channel),
         Command::Remove {
             project,
             remove_orphans,
@@ -473,6 +481,85 @@ fn list(globals: &GlobalOptions, kind: Option<ContentKind>, json: bool) -> Resul
     Ok(())
 }
 
+fn outdated(globals: &GlobalOptions, channel: ReleaseChannel) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let lockfile = load_lockfile(&globals.server_dir)?;
+    let client = ModrinthClient::new()?;
+    let outdated = plan_outdated_packages(&client, &config, &lockfile, channel)?;
+
+    if outdated.is_empty() {
+        println!("No outdated registry-backed packages found.");
+        return Ok(());
+    }
+
+    println!(
+        "{:<24} {:<10} {:<16} {:<16} Source",
+        "Slug", "Kind", "Installed", "Latest"
+    );
+    for package in outdated {
+        println!(
+            "{:<24} {:<10} {:<16} {:<16} {}",
+            truncate(&package.slug, 24),
+            package.kind,
+            truncate(&package.current_version_number, 16),
+            truncate(&package.latest_version_number, 16),
+            package.source
+        );
+    }
+
+    Ok(())
+}
+
+fn update(
+    globals: &GlobalOptions,
+    project: Option<String>,
+    all: bool,
+    channel: ReleaseChannel,
+) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    let selected = selected_update_packages(&lockfile, project.as_deref(), all)?;
+
+    if selected.is_empty() {
+        println!("No registry-backed packages to update.");
+        return Ok(());
+    }
+
+    let client = ModrinthClient::new()?;
+    let plan = plan_registry_updates(&client, &config, &lockfile, &selected, channel)?;
+
+    if plan.is_empty() {
+        println!("All selected packages are already up to date.");
+        return Ok(());
+    }
+
+    validate_install_plan(&globals.server_dir, &lockfile, &plan)?;
+    print_update_plan(&plan, globals.dry_run);
+    if globals.dry_run {
+        return Ok(());
+    }
+
+    let previous_lockfile = lockfile.clone();
+    let cache = cache_dir()?;
+    apply_install_plan(
+        &globals.server_dir,
+        &mut lockfile,
+        client.http_client(),
+        &cache,
+        plan.clone(),
+    )?;
+    remove_replaced_files(&globals.server_dir, &previous_lockfile, &plan)?;
+    write_lockfile(&globals.server_dir, &lockfile)?;
+
+    let history_message = match project {
+        Some(project) => format!("update {project}"),
+        None => "update --all".to_owned(),
+    };
+    history::record(&globals.server_dir, history_message)?;
+    println!("Update complete.");
+    Ok(())
+}
+
 fn remove(globals: &GlobalOptions, project: String, remove_orphans: bool) -> Result<()> {
     let mut lockfile = load_lockfile(&globals.server_dir)?;
     let package = lockfile
@@ -753,7 +840,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         let target_dir = self.config.paths.target_for(kind);
         let installed_path = target_dir.join(&file.filename);
         let locked_package = LockedPackage {
-            source: "modrinth".to_owned(),
+            source: REGISTRY_SOURCE.to_owned(),
             project_id: project.id.clone(),
             slug: project.slug.clone(),
             title: project.title.clone(),
@@ -819,6 +906,184 @@ fn print_install_plan(plan: &[PlannedInstall], dry_run: bool) {
     if dry_run {
         println!("Dry run: no files changed.");
     }
+}
+
+fn print_update_plan(plan: &[PlannedInstall], dry_run: bool) {
+    println!("Update plan:");
+    for item in plan {
+        println!(
+            "  ~ {} -> {} ({}) -> {} [{} bytes]",
+            item.locked_package.slug,
+            item.locked_package.version_number,
+            item.version_name,
+            item.installed_path.display(),
+            item.file.size
+        );
+    }
+    if dry_run {
+        println!("Dry run: no files changed.");
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OutdatedPackage {
+    source: String,
+    slug: String,
+    kind: ContentKind,
+    current_version_id: String,
+    current_version_number: String,
+    latest_version_id: String,
+    latest_version_number: String,
+}
+
+fn plan_outdated_packages<S: ProjectSource>(
+    source: &S,
+    config: &ServerConfig,
+    lockfile: &LockFile,
+    channel: ReleaseChannel,
+) -> Result<Vec<OutdatedPackage>> {
+    let mut outdated = Vec::new();
+    for package in lockfile
+        .packages
+        .iter()
+        .filter(|package| package.source == REGISTRY_SOURCE)
+    {
+        let Some(latest) = latest_compatible_version(source, config, package, channel)? else {
+            continue;
+        };
+        if latest.id == package.version_id {
+            continue;
+        }
+        outdated.push(OutdatedPackage {
+            source: package.source.clone(),
+            slug: package.slug.clone(),
+            kind: package.kind,
+            current_version_id: package.version_id.clone(),
+            current_version_number: package.version_number.clone(),
+            latest_version_id: latest.id,
+            latest_version_number: latest.version_number,
+        });
+    }
+
+    Ok(outdated)
+}
+
+fn latest_compatible_version<S: ProjectSource>(
+    source: &S,
+    config: &ServerConfig,
+    package: &LockedPackage,
+    channel: ReleaseChannel,
+) -> Result<Option<ProjectVersion>> {
+    let loader = package.loader.clone().or_else(|| {
+        config
+            .server_type
+            .modrinth_loader(package.kind)
+            .map(ToOwned::to_owned)
+    });
+    let versions = source.get_project_versions(
+        &package.project_id,
+        &loader.into_iter().collect::<Vec<_>>(),
+        std::slice::from_ref(&config.minecraft_version),
+    )?;
+
+    Ok(select_version(&versions, None, channel).cloned())
+}
+
+fn selected_update_packages(
+    lockfile: &LockFile,
+    project: Option<&str>,
+    all: bool,
+) -> Result<Vec<LockedPackage>> {
+    if all && project.is_some() {
+        return Err(MinecliError::message(
+            "update accepts either a package or --all, not both",
+        ));
+    }
+    if !all && project.is_none() {
+        return Err(MinecliError::message("update requires a package or --all"));
+    }
+
+    if all {
+        return Ok(lockfile
+            .packages
+            .iter()
+            .filter(|package| package.source == REGISTRY_SOURCE)
+            .cloned()
+            .collect());
+    }
+
+    let project = project.expect("checked above");
+    let package = lockfile
+        .package_by_query(project)
+        .cloned()
+        .ok_or_else(|| MinecliError::message(format!("package `{project}` is not installed")))?;
+    if package.source != REGISTRY_SOURCE {
+        return Err(MinecliError::message(format!(
+            "{} was installed from {} and cannot be updated from a registry source",
+            package.slug, package.source
+        )));
+    }
+
+    Ok(vec![package])
+}
+
+fn plan_registry_updates<S: ProjectSource>(
+    source: &S,
+    config: &ServerConfig,
+    lockfile: &LockFile,
+    selected: &[LockedPackage],
+    channel: ReleaseChannel,
+) -> Result<Vec<PlannedInstall>> {
+    let mut planned = Vec::new();
+    let mut planned_project_ids = HashSet::new();
+
+    for package in selected {
+        let mut resolver = InstallResolver::new(source, config, lockfile, true, channel);
+        let package_plan = resolver.resolve(
+            &package.project_id,
+            Some(package.kind),
+            None,
+            package.installed_as_dependency,
+        )?;
+        for item in package_plan {
+            if planned_project_ids.insert(item.locked_package.project_id.clone()) {
+                planned.push(item);
+            }
+        }
+    }
+
+    Ok(planned)
+}
+
+fn remove_replaced_files(
+    server_dir: &Path,
+    previous_lockfile: &LockFile,
+    plan: &[PlannedInstall],
+) -> Result<()> {
+    for item in plan {
+        let Some(previous) =
+            previous_lockfile.package_by_project_id(&item.locked_package.project_id)
+        else {
+            continue;
+        };
+        if previous.installed_path == item.locked_package.installed_path {
+            continue;
+        }
+
+        let previous_path = server_dir.join(&previous.installed_path);
+        match fs::remove_file(&previous_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(MinecliError::Io {
+                    path: previous_path,
+                    source: error,
+                });
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_content_kind(server_type: ServerType, kind: ContentKind) -> Result<()> {
@@ -1164,6 +1429,94 @@ mod tests {
             .unwrap();
 
         assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn outdated_planning_detects_registry_packages_and_skips_local_sources() {
+        let source = MockSource::new().with_versions(
+            "root",
+            vec![
+                version("root-v2", "root", "2.0.0", vec![]),
+                version("root-v1", "root", "1.0.0", vec![]),
+            ],
+        );
+        let config = config();
+        let mut root = package("root", vec![], false);
+        root.version_id = "root-v1".to_owned();
+        root.version_number = "1.0.0".to_owned();
+        let mut local = package("local", vec![], false);
+        local.source = "local-file".to_owned();
+        let lockfile = LockFile {
+            packages: vec![root, local],
+        };
+
+        let outdated =
+            super::plan_outdated_packages(&source, &config, &lockfile, ReleaseChannel::Release)
+                .unwrap();
+
+        assert_eq!(outdated.len(), 1);
+        assert_eq!(outdated[0].slug, "root");
+        assert_eq!(outdated[0].current_version_id, "root-v1");
+        assert_eq!(outdated[0].latest_version_id, "root-v2");
+        assert_eq!(outdated[0].latest_version_number, "2.0.0");
+    }
+
+    #[test]
+    fn update_planning_updates_required_dependencies_when_root_is_current() {
+        let source = MockSource::new()
+            .with_project(project("root"))
+            .with_project(project("dep"))
+            .with_versions(
+                "root",
+                vec![version(
+                    "root-v1",
+                    "root",
+                    "1.0.0",
+                    vec![required_dependency("dep")],
+                )],
+            )
+            .with_versions(
+                "dep",
+                vec![
+                    version("dep-v2", "dep", "2.0.0", vec![]),
+                    version("dep-v1", "dep", "1.0.0", vec![]),
+                ],
+            );
+        let config = config();
+        let mut root = package("root", vec!["dep".to_owned()], false);
+        root.version_id = "root-v1".to_owned();
+        let mut dep = package("dep", vec![], true);
+        dep.version_id = "dep-v1".to_owned();
+        let lockfile = LockFile {
+            packages: vec![root.clone(), dep],
+        };
+
+        let plan = super::plan_registry_updates(
+            &source,
+            &config,
+            &lockfile,
+            &[root],
+            ReleaseChannel::Release,
+        )
+        .unwrap();
+
+        assert_eq!(slugs(&plan), vec!["dep"]);
+        assert_eq!(plan[0].locked_package.version_id, "dep-v2");
+        assert!(plan[0].locked_package.installed_as_dependency);
+    }
+
+    #[test]
+    fn selected_update_packages_rejects_local_sources() {
+        let mut local = package("local", vec![], false);
+        local.source = "local-file".to_owned();
+        let lockfile = LockFile {
+            packages: vec![local],
+        };
+
+        let result = super::selected_update_packages(&lockfile, Some("local"), false);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("local-file"));
     }
 
     #[test]

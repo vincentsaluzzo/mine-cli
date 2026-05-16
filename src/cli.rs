@@ -119,6 +119,21 @@ pub enum Command {
         #[arg(long, help = "Print machine-readable JSON")]
         json: bool,
     },
+    /// Show registry-backed packages with newer compatible versions.
+    Outdated {
+        #[arg(long, value_enum, default_value_t = ReleaseChannel::Release, help = "Allowed release channel")]
+        channel: ReleaseChannel,
+    },
+    /// Update registry-backed packages to newer compatible versions.
+    Update {
+        project: Option<String>,
+
+        #[arg(long, help = "Update all registry-backed packages")]
+        all: bool,
+
+        #[arg(long, value_enum, default_value_t = ReleaseChannel::Release, help = "Allowed release channel")]
+        channel: ReleaseChannel,
+    },
     /// Remove a package tracked by MineCLI.
     Remove {
         project: String,

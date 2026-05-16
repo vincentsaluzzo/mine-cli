@@ -195,16 +195,16 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 
 ### Update And Outdated
 
-- [ ] Implement `minecli outdated`.
-- [ ] Query latest compatible Modrinth versions for installed packages.
-- [ ] Compare installed version IDs against latest compatible version IDs.
+- [x] Implement `minecli outdated`.
+- [x] Query latest compatible Modrinth versions for installed packages.
+- [x] Compare installed version IDs against latest compatible version IDs.
 - [ ] Show changelog summaries when requested.
-- [ ] Implement `minecli update`.
-- [ ] Support `minecli update <project>`.
-- [ ] Support `minecli update --all`.
-- [ ] Support `minecli update --dry-run`.
-- [ ] Update dependency versions when required.
-- [ ] Add tests for update planning.
+- [x] Implement `minecli update`.
+- [x] Support `minecli update <project>`.
+- [x] Support `minecli update --all`.
+- [x] Support `minecli update --dry-run`.
+- [x] Update dependency versions when required.
+- [x] Add tests for update planning.
 
 ### Backups And Rollback
 
