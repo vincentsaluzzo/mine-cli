@@ -123,6 +123,9 @@ pub enum Command {
     Outdated {
         #[arg(long, value_enum, default_value_t = ReleaseChannel::Release, help = "Allowed release channel")]
         channel: ReleaseChannel,
+
+        #[arg(long, help = "Show latest-version changelog summaries when available")]
+        changelog: bool,
     },
     /// Update registry-backed packages to newer compatible versions.
     Update {
@@ -134,6 +137,21 @@ pub enum Command {
         #[arg(long, value_enum, default_value_t = ReleaseChannel::Release, help = "Allowed release channel")]
         channel: ReleaseChannel,
     },
+    /// Manage MineCLI file backups.
+    Backups {
+        #[command(subcommand)]
+        command: BackupsCommand,
+    },
+    /// Restore files and lockfile entries from a backup operation.
+    Rollback {
+        #[arg(value_name = "OPERATION_ID")]
+        operation_id: String,
+    },
+    /// Edit the local server config in $EDITOR.
+    Edit {
+        #[arg(long, help = "Keep edited config even when validation fails")]
+        force: bool,
+    },
     /// Remove a package tracked by MineCLI.
     Remove {
         project: String,
@@ -142,7 +160,10 @@ pub enum Command {
         remove_orphans: bool,
     },
     /// Check local folders, lockfile entries, and hashes.
-    Doctor,
+    Doctor {
+        #[arg(long, help = "Apply safe automatic fixes")]
+        fix: bool,
+    },
     /// Manage globally registered server folders.
     Servers {
         #[command(subcommand)]
@@ -160,6 +181,12 @@ pub enum ServersCommand {
     Remove { name: String },
     /// Show one registered server folder.
     Show { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BackupsCommand {
+    /// List backup operations for this server.
+    List,
 }
 
 #[derive(Debug, Clone)]

@@ -1,16 +1,18 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 
 use reqwest::blocking::Client;
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::Sha512;
 
-use crate::cli::{Command, GlobalOptions, ServersCommand};
+use crate::cli::{BackupsCommand, Command, GlobalOptions, ServersCommand};
 use crate::config::{
     load_global_config, load_server_registry, servers_file, write_global_config,
     write_server_registry,
 };
+use crate::core::backups::{create_backup_operation, list_backup_operations, rollback_operation};
 use crate::core::history;
 use crate::core::lockfile::{LockFile, LockedPackage, load_lockfile, write_lockfile};
 use crate::core::manifest::{ServerConfig, minecli_dir, server_file};
@@ -64,17 +66,20 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             },
         ),
         Command::List { kind, json } => list(&globals, kind, json),
-        Command::Outdated { channel } => outdated(&globals, channel),
+        Command::Outdated { channel, changelog } => outdated(&globals, channel, changelog),
         Command::Update {
             project,
             all,
             channel,
         } => update(&globals, project, all, channel),
+        Command::Backups { command } => backups(&globals, command),
+        Command::Rollback { operation_id } => rollback(&globals, operation_id),
+        Command::Edit { force } => edit(&globals, force),
         Command::Remove {
             project,
             remove_orphans,
         } => remove(&globals, project, remove_orphans),
-        Command::Doctor => doctor(&globals),
+        Command::Doctor { fix } => doctor(&globals, fix),
         Command::Servers { command } => servers(&globals, command),
     }
 }
@@ -86,6 +91,32 @@ fn servers(globals: &GlobalOptions, command: ServersCommand) -> Result<()> {
         ServersCommand::Remove { name } => servers_remove(globals, name),
         ServersCommand::Show { name } => servers_show(globals, name),
     }
+}
+
+fn backups(globals: &GlobalOptions, command: BackupsCommand) -> Result<()> {
+    match command {
+        BackupsCommand::List => backups_list(globals),
+    }
+}
+
+fn backups_list(globals: &GlobalOptions) -> Result<()> {
+    let operations = list_backup_operations(&globals.server_dir)?;
+    if operations.is_empty() {
+        println!("No backups found.");
+        return Ok(());
+    }
+
+    println!("{:<24} {:<12} Files", "Operation", "Created");
+    for operation in operations {
+        println!(
+            "{:<24} {:<12} {}",
+            truncate(&operation.id, 24),
+            operation.created_at_unix,
+            operation.files.len()
+        );
+        println!("  {}", operation.action);
+    }
+    Ok(())
 }
 
 fn servers_list(globals: &GlobalOptions) -> Result<()> {
@@ -481,7 +512,7 @@ fn list(globals: &GlobalOptions, kind: Option<ContentKind>, json: bool) -> Resul
     Ok(())
 }
 
-fn outdated(globals: &GlobalOptions, channel: ReleaseChannel) -> Result<()> {
+fn outdated(globals: &GlobalOptions, channel: ReleaseChannel, show_changelog: bool) -> Result<()> {
     let config = load_server_config(&globals.server_dir)?;
     let lockfile = load_lockfile(&globals.server_dir)?;
     let client = ModrinthClient::new()?;
@@ -505,6 +536,12 @@ fn outdated(globals: &GlobalOptions, channel: ReleaseChannel) -> Result<()> {
             truncate(&package.latest_version_number, 16),
             package.source
         );
+        if show_changelog {
+            match package.changelog_summary.as_deref() {
+                Some(summary) => println!("  changelog: {summary}"),
+                None => println!("  changelog: unavailable"),
+            }
+        }
     }
 
     Ok(())
@@ -540,6 +577,11 @@ fn update(
     }
 
     let previous_lockfile = lockfile.clone();
+    let backup = create_backup_operation(
+        &globals.server_dir,
+        history_message_for_update(project.as_deref()),
+        &packages_replaced_by_plan(&previous_lockfile, &plan),
+    )?;
     let cache = cache_dir()?;
     apply_install_plan(
         &globals.server_dir,
@@ -551,13 +593,67 @@ fn update(
     remove_replaced_files(&globals.server_dir, &previous_lockfile, &plan)?;
     write_lockfile(&globals.server_dir, &lockfile)?;
 
-    let history_message = match project {
-        Some(project) => format!("update {project}"),
-        None => "update --all".to_owned(),
-    };
+    if let Some(backup) = &backup {
+        println!("Backup created: {}", backup.id);
+    }
+    let history_message = history_message_for_update(project.as_deref());
     history::record(&globals.server_dir, history_message)?;
     println!("Update complete.");
     Ok(())
+}
+
+fn rollback(globals: &GlobalOptions, operation_id: String) -> Result<()> {
+    let operation = rollback_operation(&globals.server_dir, &operation_id)?;
+    history::record(&globals.server_dir, format!("rollback {}", operation.id))?;
+    println!(
+        "Rollback complete: restored {} file(s) from {}.",
+        operation.files.len(),
+        operation.id
+    );
+    Ok(())
+}
+
+fn edit(globals: &GlobalOptions, force: bool) -> Result<()> {
+    let path = server_file(&globals.server_dir);
+    let original = fs::read(&path).at(&path)?;
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .map_err(|_| MinecliError::message("set $EDITOR or $VISUAL to use minecli edit"))?;
+
+    let status = ProcessCommand::new(&editor)
+        .arg(&path)
+        .status()
+        .map_err(|source| MinecliError::Io {
+            path: PathBuf::from(&editor),
+            source,
+        })?;
+    if !status.success() {
+        return Err(MinecliError::message(format!(
+            "editor exited with status {status}"
+        )));
+    }
+
+    match load_server_config(&globals.server_dir).and_then(|config| {
+        validate_server_config(&config)?;
+        Ok(config)
+    }) {
+        Ok(_) => {
+            history::record(&globals.server_dir, "edit server config")?;
+            println!("Config updated: {}", path.display());
+            Ok(())
+        }
+        Err(error) if force => {
+            println!("Warning: edited config did not validate: {error}");
+            history::record(&globals.server_dir, "edit server config --force")?;
+            Ok(())
+        }
+        Err(error) => {
+            crate::core::manifest::write_atomic(&path, &original)?;
+            Err(MinecliError::message(format!(
+                "edited config is invalid and was restored: {error}"
+            )))
+        }
+    }
 }
 
 fn remove(globals: &GlobalOptions, project: String, remove_orphans: bool) -> Result<()> {
@@ -603,6 +699,16 @@ fn remove(globals: &GlobalOptions, project: String, remove_orphans: bool) -> Res
         return Ok(());
     }
 
+    let packages_to_backup = to_remove
+        .iter()
+        .filter_map(|project_id| lockfile.package_by_project_id(project_id).cloned())
+        .collect::<Vec<_>>();
+    let backup = create_backup_operation(
+        &globals.server_dir,
+        format!("remove {project}"),
+        &packages_to_backup,
+    )?;
+
     for project_id in to_remove {
         if let Some(package) = lockfile.remove_project(&project_id) {
             let path = globals.server_dir.join(&package.installed_path);
@@ -620,15 +726,21 @@ fn remove(globals: &GlobalOptions, project: String, remove_orphans: bool) -> Res
     }
 
     write_lockfile(&globals.server_dir, &lockfile)?;
+    if let Some(backup) = backup {
+        println!("Backup created: {}", backup.id);
+    }
     history::record(&globals.server_dir, format!("remove {project}"))?;
     println!("Remove complete.");
     Ok(())
 }
 
-fn doctor(globals: &GlobalOptions) -> Result<()> {
+fn doctor(globals: &GlobalOptions, fix: bool) -> Result<()> {
     let config = load_server_config(&globals.server_dir)?;
-    let lockfile = load_lockfile(&globals.server_dir)?;
+    validate_server_config(&config)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
     let mut issues = Vec::new();
+    let mut fixes = Vec::new();
+    let mut stale_project_ids = Vec::new();
 
     for path in [
         &config.paths.mods,
@@ -637,23 +749,63 @@ fn doctor(globals: &GlobalOptions) -> Result<()> {
     ] {
         let absolute = globals.server_dir.join(path);
         if !absolute.exists() {
-            issues.push(format!("missing directory: {}", path.display()));
+            if fix {
+                fs::create_dir_all(&absolute).at(&absolute)?;
+                fixes.push(format!("created missing directory: {}", path.display()));
+            } else {
+                issues.push(format!(
+                    "missing directory: {} (run `minecli doctor --fix` to create it)",
+                    path.display()
+                ));
+            }
         }
     }
 
     for package in &lockfile.packages {
         let path = globals.server_dir.join(&package.installed_path);
         if !path.exists() {
-            issues.push(format!(
-                "missing installed file for {}: {}",
-                package.slug,
-                package.installed_path.display()
-            ));
+            if fix {
+                stale_project_ids.push(package.project_id.clone());
+                fixes.push(format!(
+                    "removed stale lockfile entry for {}: {}",
+                    package.slug,
+                    package.installed_path.display()
+                ));
+            } else {
+                issues.push(format!(
+                    "stale lockfile entry for {}: missing {} (run `minecli doctor --fix` to remove the entry)",
+                    package.slug,
+                    package.installed_path.display()
+                ));
+            }
             continue;
         }
 
         if let Err(error) = verify_file_hash(&path, &package.hashes, &package.filename) {
-            issues.push(format!("{error}"));
+            issues.push(format!(
+                "{error} (reinstall the package or rollback to a backup)"
+            ));
+        }
+    }
+
+    for project_id in stale_project_ids {
+        lockfile.remove_project(&project_id);
+    }
+    if fix && !fixes.is_empty() {
+        write_lockfile(&globals.server_dir, &lockfile)?;
+    }
+
+    issues.extend(detect_duplicate_installed_files(
+        &globals.server_dir,
+        &config,
+    )?);
+    issues.extend(detect_duplicate_lockfile_entries(&lockfile));
+    issues.extend(package_metadata_issues(&lockfile, globals.verbose));
+
+    if !fixes.is_empty() {
+        println!("Applied {} fix(es):", fixes.len());
+        for fixed in &fixes {
+            println!("  - {fixed}");
         }
     }
 
@@ -668,6 +820,171 @@ fn doctor(globals: &GlobalOptions) -> Result<()> {
     }
 
     Err(MinecliError::message("doctor found issues"))
+}
+
+fn validate_server_config(config: &ServerConfig) -> Result<()> {
+    if config.name.trim().is_empty() {
+        return Err(MinecliError::message("server name cannot be empty"));
+    }
+    if config.minecraft_version.trim().is_empty() {
+        return Err(MinecliError::message("minecraft version cannot be empty"));
+    }
+    if config.world.trim().is_empty() {
+        return Err(MinecliError::message("world name cannot be empty"));
+    }
+    for (label, path) in [
+        ("mods", &config.paths.mods),
+        ("plugins", &config.paths.plugins),
+        ("datapacks", &config.paths.datapacks),
+    ] {
+        if path.as_os_str().is_empty() {
+            return Err(MinecliError::message(format!(
+                "{label} path cannot be empty"
+            )));
+        }
+        if path.is_absolute() {
+            return Err(MinecliError::message(format!(
+                "{label} path must be relative to the server folder"
+            )));
+        }
+        if path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir | std::path::Component::RootDir
+            )
+        }) {
+            return Err(MinecliError::message(format!(
+                "{label} path cannot escape the server folder"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn detect_duplicate_installed_files(
+    server_dir: &Path,
+    config: &ServerConfig,
+) -> Result<Vec<String>> {
+    let mut issues = Vec::new();
+    for directory in [
+        &config.paths.mods,
+        &config.paths.plugins,
+        &config.paths.datapacks,
+    ] {
+        let absolute = server_dir.join(directory);
+        if !absolute.exists() {
+            continue;
+        }
+        let mut filenames: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+        for entry in fs::read_dir(&absolute).at(&absolute)? {
+            let entry = entry.at(&absolute)?;
+            if !entry.path().is_file() {
+                continue;
+            }
+            let filename = entry.file_name().to_string_lossy().to_lowercase();
+            filenames
+                .entry(filename)
+                .or_default()
+                .push(directory.join(entry.file_name()));
+        }
+        for paths in filenames.values().filter(|paths| paths.len() > 1) {
+            issues.push(format!(
+                "duplicate installed files with the same case-insensitive name: {}",
+                paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+    }
+    Ok(issues)
+}
+
+fn detect_duplicate_lockfile_entries(lockfile: &LockFile) -> Vec<String> {
+    let mut issues = Vec::new();
+    let mut by_path: BTreeMap<PathBuf, Vec<String>> = BTreeMap::new();
+    let mut by_project: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    for package in &lockfile.packages {
+        by_path
+            .entry(package.installed_path.clone())
+            .or_default()
+            .push(package.slug.clone());
+        by_project
+            .entry(package.project_id.clone())
+            .or_default()
+            .push(package.slug.clone());
+    }
+
+    for (path, slugs) in by_path.into_iter().filter(|(_, slugs)| slugs.len() > 1) {
+        issues.push(format!(
+            "duplicate lockfile target {} owned by {}",
+            path.display(),
+            slugs.join(", ")
+        ));
+    }
+    for (project_id, slugs) in by_project.into_iter().filter(|(_, slugs)| slugs.len() > 1) {
+        issues.push(format!(
+            "duplicate lockfile project {project_id} listed as {}",
+            slugs.join(", ")
+        ));
+    }
+
+    issues
+}
+
+fn package_metadata_issues(lockfile: &LockFile, verbose: bool) -> Vec<String> {
+    let mut issues = Vec::new();
+    let Ok(client) = ModrinthClient::new() else {
+        return issues;
+    };
+    let mut skipped = 0usize;
+
+    for package in lockfile
+        .packages
+        .iter()
+        .filter(|package| package.source == REGISTRY_SOURCE)
+    {
+        let project = match client.get_project(&package.project_id) {
+            Ok(project) => project,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+
+        if project.server_side == "unsupported" {
+            issues.push(format!(
+                "{} is marked as unsupported on servers by its package source",
+                package.slug
+            ));
+        }
+        if project.client_side == "required" && project.server_side != "required" {
+            issues.push(format!(
+                "{} is likely client-oriented: client side is required, server side is {}",
+                package.slug, project.server_side
+            ));
+        }
+        match content_kind_from_project_type(&project.project_type) {
+            Ok(kind) if kind != package.kind => issues.push(format!(
+                "{} is tracked as {} but source metadata says {}",
+                package.slug, package.kind, kind
+            )),
+            Ok(_) => {}
+            Err(error) => issues.push(format!(
+                "{} has incompatible metadata: {error}",
+                package.slug
+            )),
+        }
+    }
+
+    if verbose && skipped > 0 {
+        eprintln!("skipped source metadata checks for {skipped} package(s)");
+    }
+
+    issues
 }
 
 #[derive(Debug, Clone)]
@@ -934,6 +1251,7 @@ struct OutdatedPackage {
     current_version_number: String,
     latest_version_id: String,
     latest_version_number: String,
+    changelog_summary: Option<String>,
 }
 
 fn plan_outdated_packages<S: ProjectSource>(
@@ -962,10 +1280,19 @@ fn plan_outdated_packages<S: ProjectSource>(
             current_version_number: package.version_number.clone(),
             latest_version_id: latest.id,
             latest_version_number: latest.version_number,
+            changelog_summary: latest.changelog.as_deref().and_then(summarize_changelog),
         });
     }
 
     Ok(outdated)
+}
+
+fn summarize_changelog(changelog: &str) -> Option<String> {
+    let summary = changelog
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    Some(truncate(summary, 120))
 }
 
 fn latest_compatible_version<S: ProjectSource>(
@@ -1053,6 +1380,23 @@ fn plan_registry_updates<S: ProjectSource>(
     }
 
     Ok(planned)
+}
+
+fn packages_replaced_by_plan(lockfile: &LockFile, plan: &[PlannedInstall]) -> Vec<LockedPackage> {
+    plan.iter()
+        .filter_map(|item| {
+            lockfile
+                .package_by_project_id(&item.locked_package.project_id)
+                .cloned()
+        })
+        .collect()
+}
+
+fn history_message_for_update(project: Option<&str>) -> String {
+    match project {
+        Some(project) => format!("update {project}"),
+        None => "update --all".to_owned(),
+    }
 }
 
 fn remove_replaced_files(
@@ -1520,6 +1864,31 @@ mod tests {
     }
 
     #[test]
+    fn server_config_validation_rejects_unsafe_paths() {
+        let mut config = config();
+        config.paths.mods = PathBuf::from("/tmp/mods");
+
+        let result = super::validate_server_config(&config);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("relative"));
+    }
+
+    #[test]
+    fn diagnostics_detect_duplicate_lockfile_entries() {
+        let lockfile = LockFile {
+            packages: vec![
+                package("root", vec![], false),
+                package("root", vec![], false),
+            ],
+        };
+
+        let issues = super::detect_duplicate_lockfile_entries(&lockfile);
+
+        assert!(issues.iter().any(|issue| issue.contains("duplicate")));
+    }
+
+    #[test]
     fn install_plan_rejects_unmanaged_file_conflicts() {
         let temp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join("mods")).unwrap();
@@ -1704,6 +2073,7 @@ mod tests {
             project_id: project_id.to_owned(),
             name: format!("{project_id} {version_number}"),
             version_number: version_number.to_owned(),
+            changelog: None,
             version_type: ReleaseChannel::Release,
             game_versions: vec!["1.21.5".to_owned()],
             loaders: vec!["fabric".to_owned()],

@@ -23,8 +23,11 @@ cargo run -- --path /srv/minecraft/survival list
 cargo run -- --path /srv/minecraft/survival outdated
 cargo run -- --path /srv/minecraft/survival --dry-run update --all
 cargo run -- --path /srv/minecraft/survival update fabric-api
+cargo run -- --path /srv/minecraft/survival backups list
+cargo run -- --path /srv/minecraft/survival rollback <operation-id>
+cargo run -- --path /srv/minecraft/survival edit
 cargo run -- --path /srv/minecraft/survival status
-cargo run -- --path /srv/minecraft/survival doctor
+cargo run -- --path /srv/minecraft/survival doctor --fix
 cargo run -- servers add survival /srv/minecraft/survival
 cargo run -- --server survival status
 ```
@@ -36,6 +39,7 @@ MineCLI stores per-server state in `.minecli/` inside the server folder:
   server.toml
   lock.toml
   history.log
+  backups/
 ```
 
 ## Compatible Server Layouts
@@ -92,11 +96,33 @@ Registry-backed installs can be checked and updated against the latest compatibl
 
 ```bash
 cargo run -- --server survival outdated
+cargo run -- --server survival outdated --changelog
 cargo run -- --server survival --dry-run update --all
 cargo run -- --server survival update fabric-api
 ```
 
 Local file and folder installs are tracked in the lockfile but intentionally skipped by update commands.
+
+## Backups And Rollback
+
+Update and remove operations create file backups before replacing or deleting tracked files:
+
+```bash
+cargo run -- --server survival backups list
+cargo run -- --server survival rollback <operation-id>
+```
+
+Backups are stored under `.minecli/backups/` with metadata that lets rollback restore both files and lockfile entries.
+
+## Editing And Diagnostics
+
+```bash
+cargo run -- --server survival edit
+cargo run -- --server survival doctor
+cargo run -- --server survival doctor --fix
+```
+
+`edit` opens `.minecli/server.toml` in `$VISUAL` or `$EDITOR` and validates the result. `doctor --fix` applies safe local fixes such as creating missing content directories and removing stale lockfile entries.
 
 ## Development
 

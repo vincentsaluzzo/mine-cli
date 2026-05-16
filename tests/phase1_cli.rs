@@ -95,3 +95,26 @@ fn doctor_reports_missing_target_directories() {
     assert!(!doctor.status.success());
     assert!(stdout(&doctor).contains("missing directory: mods"));
 }
+
+#[test]
+fn doctor_fix_creates_missing_target_directories() {
+    let temp = tempfile::tempdir().unwrap();
+    let server_path = temp.path().to_string_lossy().to_string();
+    let init = minecli(&[
+        "--path",
+        &server_path,
+        "init",
+        "--type",
+        "fabric",
+        "--minecraft",
+        "1.21.5",
+    ]);
+    assert!(init.status.success());
+
+    let doctor = minecli(&["--path", &server_path, "doctor", "--fix"]);
+
+    assert!(doctor.status.success(), "stderr:\n{}", stderr(&doctor));
+    assert!(stdout(&doctor).contains("created missing directory: mods"));
+    assert!(temp.path().join("mods").is_dir());
+    assert!(temp.path().join("world/datapacks").is_dir());
+}

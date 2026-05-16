@@ -259,6 +259,8 @@ pub struct ProjectVersion {
     pub project_id: String,
     pub name: String,
     pub version_number: String,
+    #[serde(default)]
+    pub changelog: Option<String>,
     pub version_type: ReleaseChannel,
     #[serde(default)]
     pub game_versions: Vec<String>,
@@ -385,6 +387,7 @@ mod tests {
             project_id: "project".to_owned(),
             name: version_number.to_owned(),
             version_number: version_number.to_owned(),
+            changelog: None,
             version_type,
             game_versions: vec!["1.21.5".to_owned()],
             loaders: vec!["fabric".to_owned()],

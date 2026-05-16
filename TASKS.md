@@ -198,7 +198,7 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 - [x] Implement `minecli outdated`.
 - [x] Query latest compatible Modrinth versions for installed packages.
 - [x] Compare installed version IDs against latest compatible version IDs.
-- [ ] Show changelog summaries when requested.
+- [x] Show changelog summaries when requested.
 - [x] Implement `minecli update`.
 - [x] Support `minecli update <project>`.
 - [x] Support `minecli update --all`.
@@ -208,13 +208,13 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 
 ### Backups And Rollback
 
-- [ ] Create backups before replacing or deleting installed files.
-- [ ] Store backups under `.minecli/backups/`.
-- [ ] Record backup metadata.
-- [ ] Implement `minecli backups list`.
-- [ ] Implement `minecli rollback <operation-id>`.
-- [ ] Validate rollback targets before restoring.
-- [ ] Add tests for backup creation and rollback.
+- [x] Create backups before replacing or deleting installed files.
+- [x] Store backups under `.minecli/backups/`.
+- [x] Record backup metadata.
+- [x] Implement `minecli backups list`.
+- [x] Implement `minecli rollback <operation-id>`.
+- [x] Validate rollback targets before restoring.
+- [x] Add tests for backup creation and rollback.
 
 ### Better Detection
 
@@ -228,21 +228,21 @@ Goal: make MineCLI comfortable for admins managing real servers over time.
 
 ### Editing
 
-- [ ] Implement `minecli edit`.
-- [ ] Open `.minecli/server.toml` in `$EDITOR`.
-- [ ] Validate config after editing.
-- [ ] Refuse invalid edits unless `--force` is passed.
-- [ ] Add tests for validation logic.
+- [x] Implement `minecli edit`.
+- [x] Open `.minecli/server.toml` in `$EDITOR`.
+- [x] Validate config after editing.
+- [x] Refuse invalid edits unless `--force` is passed.
+- [x] Add tests for validation logic.
 
 ### Diagnostics
 
-- [ ] Improve `minecli doctor` with actionable repair suggestions.
-- [ ] Add `minecli doctor --fix` for safe automatic fixes.
-- [ ] Detect stale lockfile entries.
-- [ ] Detect duplicate installed files.
-- [ ] Detect likely client-only mods installed on a server.
-- [ ] Detect incompatible package metadata when Modrinth exposes it.
-- [ ] Add tests for diagnostics.
+- [x] Improve `minecli doctor` with actionable repair suggestions.
+- [x] Add `minecli doctor --fix` for safe automatic fixes.
+- [x] Detect stale lockfile entries.
+- [x] Detect duplicate installed files.
+- [x] Detect likely client-only mods installed on a server.
+- [x] Detect incompatible package metadata when Modrinth exposes it.
+- [x] Add tests for diagnostics.
 
 ## Phase 3: Ecosystem Expansion
 
