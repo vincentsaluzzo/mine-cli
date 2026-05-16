@@ -224,6 +224,7 @@ impl SearchParams {
         server_type: Option<ServerType>,
         kind: Option<ContentKind>,
         limit: usize,
+        server_side_only: bool,
     ) -> Self {
         let loader = match kind {
             Some(kind) => server_type
@@ -242,7 +243,7 @@ impl SearchParams {
             minecraft_version,
             loader,
             kind,
-            server_side_only: true,
+            server_side_only,
             limit,
         }
     }
@@ -465,6 +466,7 @@ mod tests {
             Some(ServerType::Fabric),
             Some(ContentKind::Mod),
             5,
+            true,
         );
 
         assert_eq!(params.minecraft_version.as_deref(), Some("1.21.5"));
@@ -472,5 +474,20 @@ mod tests {
         assert_eq!(params.kind, Some(ContentKind::Mod));
         assert!(params.server_side_only);
         assert_eq!(params.limit, 5);
+    }
+
+    #[test]
+    fn search_params_can_include_non_server_side_projects() {
+        let params = SearchParams::for_server(
+            "map".to_owned(),
+            Some("1.21.5".to_owned()),
+            Some(ServerType::Purpur),
+            None,
+            5,
+            false,
+        );
+
+        assert_eq!(params.loader.as_deref(), Some("paper"));
+        assert!(!params.server_side_only);
     }
 }

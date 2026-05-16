@@ -45,7 +45,12 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             force,
         } => init(&globals, server_type, minecraft, name, force),
         Command::Status => status(&globals),
-        Command::Search { query, kind, limit } => search(&globals, query, kind, limit),
+        Command::Search {
+            query,
+            kind,
+            limit,
+            all_sides,
+        } => search(&globals, query, kind, limit, all_sides),
         Command::Import => import_existing(&globals),
         Command::Export { output } => export(&globals, output),
         Command::Restore { manifest } => restore(&globals, manifest),
@@ -282,6 +287,7 @@ fn search(
     query: String,
     kind: Option<ContentKind>,
     limit: usize,
+    all_sides: bool,
 ) -> Result<()> {
     let context = optional_server_context(&globals.server_dir)?;
     let params = SearchParams::for_server(
@@ -292,6 +298,7 @@ fn search(
         context.as_ref().map(|config| config.server_type),
         kind,
         limit,
+        !all_sides,
     );
     let client = ModrinthClient::new()?;
     let response = client.search(&params)?;
@@ -1129,17 +1136,6 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             );
         }
 
-        let kind = requested_kind
-            .map(Ok)
-            .unwrap_or_else(|| content_kind_from_project_type(&project.project_type))?;
-
-        if !self.config.server_type.supports(kind) {
-            return Err(MinecliError::message(format!(
-                "{} servers cannot install {kind} projects",
-                self.config.server_type
-            )));
-        }
-
         if self.planned_project_ids.contains(&project.id) {
             return Ok(Vec::new());
         }
@@ -1150,29 +1146,8 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             )));
         }
 
-        let loader = self
-            .config
-            .server_type
-            .modrinth_loader(kind)
-            .map(ToOwned::to_owned);
-        let versions = self.client.get_project_versions(
-            &project.id,
-            &loader.iter().cloned().collect::<Vec<_>>(),
-            std::slice::from_ref(&self.config.minecraft_version),
-        )?;
-        let version = select_version(&versions, requested_version, self.channel)
-            .ok_or_else(|| {
-                MinecliError::message(format!(
-                    "no compatible {} version found for Minecraft {}{}",
-                    project.slug,
-                    self.config.minecraft_version,
-                    loader
-                        .as_ref()
-                        .map(|loader| format!(" and loader {loader}"))
-                        .unwrap_or_default()
-                ))
-            })?
-            .clone();
+        let (kind, loader, version) =
+            self.select_project_version(&project, requested_kind, requested_version)?;
         debug_assert_eq!(version.project_id, project.id);
 
         let mut plan = Vec::new();
@@ -1250,6 +1225,73 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         Ok(plan)
     }
 
+    fn select_project_version(
+        &self,
+        project: &crate::sources::modrinth::Project,
+        requested_kind: Option<ContentKind>,
+        requested_version: Option<&str>,
+    ) -> Result<(
+        ContentKind,
+        Option<String>,
+        crate::sources::modrinth::ProjectVersion,
+    )> {
+        let declared_kind = content_kind_from_project_type(&project.project_type)?;
+        let candidates = match requested_kind {
+            Some(kind) => vec![kind],
+            None => install_kind_candidates(self.config.server_type, declared_kind),
+        };
+
+        for kind in &candidates {
+            if !self.config.server_type.supports(*kind) {
+                continue;
+            }
+            let loader = self
+                .config
+                .server_type
+                .modrinth_loader(*kind)
+                .map(ToOwned::to_owned);
+            let versions = self.client.get_project_versions(
+                &project.id,
+                &loader.iter().cloned().collect::<Vec<_>>(),
+                std::slice::from_ref(&self.config.minecraft_version),
+            )?;
+            if let Some(version) = select_version(&versions, requested_version, self.channel) {
+                if *kind != declared_kind && requested_kind.is_none() {
+                    println!(
+                        "Using {} install for {} because it has a compatible {} version.",
+                        kind,
+                        project.slug,
+                        loader.as_deref().unwrap_or("server")
+                    );
+                }
+                return Ok((*kind, loader, version.clone()));
+            }
+        }
+
+        if requested_kind.is_some_and(|kind| !self.config.server_type.supports(kind)) {
+            return Err(MinecliError::message(format!(
+                "{} servers cannot install {} projects",
+                self.config.server_type,
+                requested_kind.expect("checked")
+            )));
+        }
+
+        let loaders = candidates
+            .iter()
+            .filter_map(|kind| self.config.server_type.modrinth_loader(*kind))
+            .collect::<Vec<_>>();
+        Err(MinecliError::message(format!(
+            "no compatible {} version found for Minecraft {}{}",
+            project.slug,
+            self.config.minecraft_version,
+            if loaders.is_empty() {
+                String::new()
+            } else {
+                format!(" and supported loader(s) {}", loaders.join(", "))
+            }
+        )))
+    }
+
     fn resolve_dependency(
         &mut self,
         dependency_project_id: &str,
@@ -1272,6 +1314,25 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
 
         self.resolve(dependency_project_id, None, None, true)
     }
+}
+
+fn install_kind_candidates(
+    server_type: ServerType,
+    declared_kind: ContentKind,
+) -> Vec<ContentKind> {
+    let mut candidates = Vec::new();
+    if server_type.supports(declared_kind) {
+        candidates.push(declared_kind);
+    }
+    for kind in [ContentKind::Plugin, ContentKind::Mod, ContentKind::Datapack] {
+        if server_type.supports(kind) && !candidates.contains(&kind) {
+            candidates.push(kind);
+        }
+    }
+    if candidates.is_empty() {
+        candidates.push(declared_kind);
+    }
+    candidates
 }
 
 fn print_install_plan(plan: &[PlannedInstall], dry_run: bool) {
@@ -2133,6 +2194,31 @@ mod tests {
             .unwrap();
 
         assert!(plan.is_empty());
+    }
+
+    #[test]
+    fn install_resolver_infers_plugin_kind_when_project_type_is_mod_on_plugin_server() {
+        let source = MockSource::new()
+            .with_project(project("bluemap"))
+            .with_versions(
+                "bluemap",
+                vec![version("bluemap-paper", "bluemap", "5.20-paper", vec![])],
+            );
+        let mut config = config();
+        config.server_type = ServerType::Purpur;
+        let lockfile = LockFile::default();
+        let mut resolver =
+            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+
+        let plan = resolver.resolve("bluemap", None, None, false).unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].locked_package.kind, ContentKind::Plugin);
+        assert_eq!(plan[0].locked_package.loader.as_deref(), Some("paper"));
+        assert_eq!(
+            plan[0].locked_package.installed_path,
+            PathBuf::from("plugins/bluemap.jar")
+        );
     }
 
     #[test]

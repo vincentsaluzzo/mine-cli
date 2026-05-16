@@ -75,7 +75,7 @@ pub enum Command {
     },
     /// Show local server state and package counts.
     Status,
-    /// Search available server-side packages.
+    /// Search available packages.
     Search {
         query: String,
 
@@ -84,6 +84,9 @@ pub enum Command {
 
         #[arg(long, default_value_t = 10, help = "Maximum number of results")]
         limit: usize,
+
+        #[arg(long, help = "Include packages not marked server-side compatible")]
+        all_sides: bool,
     },
     /// Import existing files from mods, plugins, and datapack folders.
     Import,
