@@ -87,10 +87,20 @@ pub enum Command {
     },
     /// Install a package into the server folder.
     Install {
-        project: String,
+        project: Option<String>,
 
         #[arg(long, value_enum, help = "Expected project content kind")]
         kind: Option<ContentKind>,
+
+        #[arg(long, value_name = "PATH", help = "Install one local package file")]
+        file: Option<PathBuf>,
+
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Install all package files from a local folder"
+        )]
+        folder: Option<PathBuf>,
 
         #[arg(long, help = "Version ID or version number to install")]
         version: Option<String>,

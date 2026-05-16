@@ -17,6 +17,8 @@ cargo run -- --path /srv/minecraft/survival init --type fabric --minecraft 1.21.
 cargo run -- --path /srv/minecraft/survival init
 cargo run -- --path /srv/minecraft/survival search fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind mod
+cargo run -- --path /srv/minecraft/survival install --file ./mods/example.jar --kind mod
+cargo run -- --path /srv/minecraft/survival install --folder ./mods-to-install --kind mod
 cargo run -- --path /srv/minecraft/survival list
 cargo run -- --path /srv/minecraft/survival status
 cargo run -- --path /srv/minecraft/survival doctor
@@ -68,6 +70,18 @@ cargo run -- servers remove survival
 ```
 
 By default the registry is stored in the platform config directory as `servers.toml`. Use `--config <path>` or `MINECLI_CONFIG_DIR` to override the config directory.
+
+## Local Sources
+
+Registry installs are not the only supported source. You can also install local files and folders:
+
+```bash
+cargo run -- --server survival install --file ./voicechat.jar --kind plugin
+cargo run -- --server survival install --folder ./mods-to-install --kind mod
+cargo run -- --server survival install --file ./datapack.zip --kind datapack
+```
+
+Local installs are copied into the server's configured `mods`, `plugins`, or datapacks directory and tracked in `.minecli/lock.toml` with SHA-512/SHA-1 hashes.
 
 ## Development
 

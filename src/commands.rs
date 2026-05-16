@@ -1,8 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use reqwest::blocking::Client;
+use sha1::{Digest as Sha1Digest, Sha1};
+use sha2::Sha512;
 
 use crate::cli::{Command, GlobalOptions, ServersCommand};
 use crate::config::{
@@ -42,10 +44,23 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
         Command::Install {
             project,
             kind,
+            file,
+            folder,
             version,
             channel,
             no_deps,
-        } => install(&globals, project, kind, version, channel, no_deps),
+        } => install(
+            &globals,
+            InstallOptions {
+                project,
+                kind,
+                file,
+                folder,
+                requested_version: version,
+                channel,
+                no_deps,
+            },
+        ),
         Command::List { kind, json } => list(&globals, kind, json),
         Command::Remove {
             project,
@@ -262,7 +277,35 @@ fn search(
     Ok(())
 }
 
-fn install(
+struct InstallOptions {
+    project: Option<String>,
+    kind: Option<ContentKind>,
+    file: Option<PathBuf>,
+    folder: Option<PathBuf>,
+    requested_version: Option<String>,
+    channel: ReleaseChannel,
+    no_deps: bool,
+}
+
+fn install(globals: &GlobalOptions, options: InstallOptions) -> Result<()> {
+    match (options.project, options.file, options.folder) {
+        (Some(project), None, None) => install_from_registry(
+            globals,
+            project,
+            options.kind,
+            options.requested_version,
+            options.channel,
+            options.no_deps,
+        ),
+        (None, Some(file), None) => install_local_file(globals, file, options.kind),
+        (None, None, Some(folder)) => install_local_folder(globals, folder, options.kind),
+        _ => Err(MinecliError::message(
+            "install requires exactly one package, --file, or --folder",
+        )),
+    }
+}
+
+fn install_from_registry(
     globals: &GlobalOptions,
     project: String,
     kind: Option<ContentKind>,
@@ -297,6 +340,100 @@ fn install(
     )?;
     write_lockfile(&globals.server_dir, &lockfile)?;
     history::record(&globals.server_dir, format!("install {project}"))?;
+    println!("Install complete.");
+    Ok(())
+}
+
+fn install_local_file(
+    globals: &GlobalOptions,
+    source_path: PathBuf,
+    kind: Option<ContentKind>,
+) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    let kind = kind.ok_or_else(|| {
+        MinecliError::message("install --file requires --kind <mod|plugin|datapack>")
+    })?;
+    validate_content_kind(config.server_type, kind)?;
+    let plan = vec![planned_local_file(
+        &config,
+        &source_path,
+        kind,
+        "local-file",
+        false,
+    )?];
+
+    validate_install_plan(&globals.server_dir, &lockfile, &plan)?;
+    print_install_plan(&plan, globals.dry_run);
+    if globals.dry_run {
+        return Ok(());
+    }
+
+    apply_local_install_plan(&globals.server_dir, &mut lockfile, plan)?;
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(
+        &globals.server_dir,
+        format!("install local file {}", source_path.display()),
+    )?;
+    println!("Install complete.");
+    Ok(())
+}
+
+fn install_local_folder(
+    globals: &GlobalOptions,
+    source_dir: PathBuf,
+    kind: Option<ContentKind>,
+) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    let kind = kind.ok_or_else(|| {
+        MinecliError::message("install --folder requires --kind <mod|plugin|datapack>")
+    })?;
+    validate_content_kind(config.server_type, kind)?;
+    if !source_dir.is_dir() {
+        return Err(MinecliError::message(format!(
+            "local source folder does not exist: {}",
+            source_dir.display()
+        )));
+    }
+
+    let mut plan = Vec::new();
+    for entry in fs::read_dir(&source_dir).at(&source_dir)? {
+        let entry = entry.at(&source_dir)?;
+        let path = entry.path();
+        if !path.is_file() || !is_supported_local_artifact(&path, kind) {
+            continue;
+        }
+        plan.push(planned_local_file(
+            &config,
+            &path,
+            kind,
+            "local-folder",
+            false,
+        )?);
+    }
+    plan.sort_by(|left, right| left.locked_package.slug.cmp(&right.locked_package.slug));
+
+    if plan.is_empty() {
+        println!(
+            "No supported package files found in {}.",
+            source_dir.display()
+        );
+        return Ok(());
+    }
+
+    validate_install_plan(&globals.server_dir, &lockfile, &plan)?;
+    print_install_plan(&plan, globals.dry_run);
+    if globals.dry_run {
+        return Ok(());
+    }
+
+    apply_local_install_plan(&globals.server_dir, &mut lockfile, plan)?;
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(
+        &globals.server_dir,
+        format!("install local folder {}", source_dir.display()),
+    )?;
     println!("Install complete.");
     Ok(())
 }
@@ -682,6 +819,129 @@ fn print_install_plan(plan: &[PlannedInstall], dry_run: bool) {
     if dry_run {
         println!("Dry run: no files changed.");
     }
+}
+
+fn validate_content_kind(server_type: ServerType, kind: ContentKind) -> Result<()> {
+    if server_type.supports(kind) {
+        return Ok(());
+    }
+
+    Err(MinecliError::message(format!(
+        "{} servers cannot install {kind} packages",
+        server_type
+    )))
+}
+
+fn planned_local_file(
+    config: &ServerConfig,
+    source_path: &Path,
+    kind: ContentKind,
+    source: &str,
+    installed_as_dependency: bool,
+) -> Result<PlannedInstall> {
+    if !source_path.is_file() {
+        return Err(MinecliError::message(format!(
+            "local source file does not exist: {}",
+            source_path.display()
+        )));
+    }
+    if !is_supported_local_artifact(source_path, kind) {
+        return Err(MinecliError::message(format!(
+            "unsupported local {kind} file: {}",
+            source_path.display()
+        )));
+    }
+
+    let filename = source_path
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .ok_or_else(|| MinecliError::message("local source file has no valid filename"))?
+        .to_owned();
+    let slug = filename
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(&filename)
+        .to_owned();
+    let hashes = local_file_hashes(source_path)?;
+    let target_dir = config.paths.target_for(kind);
+    let installed_path = target_dir.join(&filename);
+
+    Ok(PlannedInstall {
+        version_name: "local".to_owned(),
+        locked_package: LockedPackage {
+            source: source.to_owned(),
+            project_id: format!("local:{}", slug),
+            slug: slug.clone(),
+            title: slug,
+            kind,
+            loader: config
+                .server_type
+                .modrinth_loader(kind)
+                .map(ToOwned::to_owned),
+            version_id: "local".to_owned(),
+            version_number: "local".to_owned(),
+            filename: filename.clone(),
+            hashes,
+            installed_path: installed_path.clone(),
+            dependencies: vec![],
+            installed_as_dependency,
+        },
+        file: ModrinthFile {
+            hashes: BTreeMap::new(),
+            url: format!("file://{}", source_path.display()),
+            filename,
+            primary: true,
+            size: fs::metadata(source_path).at(source_path)?.len(),
+        },
+        installed_path,
+    })
+}
+
+fn apply_local_install_plan(
+    server_dir: &Path,
+    lockfile: &mut LockFile,
+    plan: Vec<PlannedInstall>,
+) -> Result<()> {
+    for item in plan {
+        let source_path =
+            item.file.url.strip_prefix("file://").ok_or_else(|| {
+                MinecliError::message("local install plan contained non-file source")
+            })?;
+        let source_path = Path::new(source_path);
+        let target_path = server_dir.join(&item.installed_path);
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent).at(parent)?;
+        }
+        fs::copy(source_path, &target_path).at(&target_path)?;
+        lockfile.upsert_package(item.locked_package);
+    }
+
+    Ok(())
+}
+
+fn is_supported_local_artifact(path: &Path, kind: ContentKind) -> bool {
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+    match kind {
+        ContentKind::Mod | ContentKind::Plugin => extension.eq_ignore_ascii_case("jar"),
+        ContentKind::Datapack => {
+            extension.eq_ignore_ascii_case("zip") || extension.eq_ignore_ascii_case("jar")
+        }
+    }
+}
+
+fn local_file_hashes(path: &Path) -> Result<BTreeMap<String, String>> {
+    let bytes = fs::read(path).at(path)?;
+    let mut sha512 = Sha512::new();
+    sha512.update(&bytes);
+    let mut sha1 = Sha1::new();
+    sha1.update(&bytes);
+
+    let mut hashes = BTreeMap::new();
+    hashes.insert("sha512".to_owned(), hex::encode(sha512.finalize()));
+    hashes.insert("sha1".to_owned(), hex::encode(sha1.finalize()));
+    Ok(hashes)
 }
 
 pub(crate) fn apply_install_plan(

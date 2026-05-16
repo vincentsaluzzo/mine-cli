@@ -268,6 +268,8 @@ Goal: support broader workflows beyond direct registry installation.
 
 ### Additional Sources
 
+- [x] Support local file installs.
+- [x] Support local folder installs.
 - [ ] Evaluate Hangar support for Paper ecosystem packages.
 - [ ] Evaluate CurseForge support and API constraints.
 - [ ] Define a minimal source trait or interface.
