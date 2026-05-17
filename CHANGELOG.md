@@ -4,7 +4,7 @@ All notable changes to MineCLI are documented here.
 
 The project follows the versioning policy in [docs/VERSIONING.md](docs/VERSIONING.md).
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-05-17
 
 ### Added
 
@@ -34,4 +34,4 @@ The project follows the versioning policy in [docs/VERSIONING.md](docs/VERSIONIN
 - Hangar and CurseForge are evaluated but not implemented as active package sources.
 - Modpack installs skip optional server files.
 - Datapack enable/disable is filesystem-based and does not edit `level.dat`.
-- Release binaries are not published yet.
+- Homebrew packaging is not available yet.

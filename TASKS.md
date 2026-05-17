@@ -349,7 +349,7 @@ Goal: make MineCLI easy to install, document, and trust.
 
 - [x] Define versioning policy.
 - [x] Create initial `CHANGELOG.md`.
-- [ ] Tag the first alpha release.
-- [ ] Publish binaries.
+- [x] Tag the first alpha release.
+- [x] Publish binaries.
 - [ ] Collect real-server feedback.
 - [ ] Adjust the roadmap based on actual admin workflows.

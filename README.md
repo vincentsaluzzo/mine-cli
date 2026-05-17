@@ -10,6 +10,12 @@ This repository is in Phase 4: polish and distribution for production testing.
 
 The current executable supports:
 
+Install latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vincentsaluzzo/mine-cli/main/scripts/install-release.sh | sh
+```
+
 ```bash
 cargo run -- --help
 cargo run -- --version

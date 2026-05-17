@@ -2,7 +2,21 @@
 
 This guide is for running MineCLI against a real Minecraft server folder.
 
-## Install
+## Install From Release
+
+After the first GitHub release is published:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vincentsaluzzo/mine-cli/main/scripts/install-release.sh | sh
+```
+
+Install a specific version:
+
+```bash
+MINECLI_VERSION=v0.1.0 sh -c "$(curl -fsSL https://raw.githubusercontent.com/vincentsaluzzo/mine-cli/main/scripts/install-release.sh)"
+```
+
+## Build From Source
 
 Build a local release binary:
 
