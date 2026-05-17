@@ -26,6 +26,9 @@ cargo run -- --path /srv/minecraft/staging restore survival.minecli.toml
 cargo run -- --path /srv/minecraft/staging sync /srv/minecraft/survival
 cargo run -- --path /srv/minecraft/survival modpack inspect ./pack.mrpack
 cargo run -- --path /srv/minecraft/survival --dry-run modpack install ./pack.mrpack
+cargo run -- --path /srv/minecraft/survival datapacks list
+cargo run -- --path /srv/minecraft/survival datapacks disable example-pack
+cargo run -- --path /srv/minecraft/survival datapacks enable example-pack
 cargo run -- --path /srv/minecraft/survival list
 cargo run -- --path /srv/minecraft/survival outdated
 cargo run -- --path /srv/minecraft/survival --dry-run update --all
@@ -130,6 +133,18 @@ cargo run -- --server survival modpack install ./pack.mrpack
 ```
 
 Client-only packs are rejected. Optional server files are listed but skipped for now, and `overrides/` plus `server-overrides/` files are copied during install.
+
+## Datapacks
+
+MineCLI can inspect and toggle datapacks without editing `level.dat`:
+
+```bash
+cargo run -- --server survival datapacks list
+cargo run -- --server survival datapacks disable example-pack
+cargo run -- --server survival datapacks enable example-pack
+```
+
+Disabled datapacks are moved to `.minecli/datapacks-disabled/`. If a datapack is tracked in `lock.toml`, MineCLI updates the tracked path when it is enabled or disabled.
 
 ## Updates
 

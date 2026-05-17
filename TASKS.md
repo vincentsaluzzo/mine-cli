@@ -285,6 +285,17 @@ Goal: support broader workflows beyond direct registry installation.
 - [x] Detect unsupported client-only modpacks.
 - [x] Add tests for modpack parsing.
 
+### Datapack Management
+
+- [x] Implement `minecli datapacks list`.
+- [x] Read `pack.mcmeta` from zipped and folder datapacks.
+- [x] Show enabled and disabled datapacks.
+- [x] Support `minecli datapacks disable <datapack>`.
+- [x] Support `minecli datapacks enable <datapack>`.
+- [x] Keep disabled datapacks under `.minecli/datapacks-disabled/`.
+- [x] Update tracked datapack lockfile paths when enabling or disabling.
+- [x] Add tests for datapack discovery and state changes.
+
 ### Server Process Hooks
 
 - [ ] Add optional pre-install hooks.

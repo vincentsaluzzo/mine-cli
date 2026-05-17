@@ -110,6 +110,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ModpackCommand,
     },
+    /// Manage datapacks in the configured world.
+    Datapacks {
+        #[command(subcommand)]
+        command: DatapacksCommand,
+    },
     /// Install a package into the server folder.
     Install {
         project: Option<String>,
@@ -226,6 +231,16 @@ pub enum ModpackCommand {
         #[arg(value_name = "MRPACK")]
         path: PathBuf,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DatapacksCommand {
+    /// List enabled and disabled datapacks.
+    List,
+    /// Move a datapack out of the world datapacks folder.
+    Disable { datapack: String },
+    /// Move a disabled datapack back into the world datapacks folder.
+    Enable { datapack: String },
 }
 
 #[derive(Debug, Clone)]

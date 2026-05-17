@@ -8,12 +8,15 @@ use serde::{Deserialize, Serialize};
 use sha1::{Digest as Sha1Digest, Sha1};
 use sha2::Sha512;
 
-use crate::cli::{BackupsCommand, Command, GlobalOptions, ModpackCommand, ServersCommand};
+use crate::cli::{
+    BackupsCommand, Command, DatapacksCommand, GlobalOptions, ModpackCommand, ServersCommand,
+};
 use crate::config::{
     load_global_config, load_server_registry, servers_file, write_global_config,
     write_server_registry,
 };
 use crate::core::backups::{create_backup_operation, list_backup_operations, rollback_operation};
+use crate::core::datapack::{disable_datapack, discover_datapacks, enable_datapack};
 use crate::core::history;
 use crate::core::lockfile::{LockFile, LockedPackage, load_lockfile, write_lockfile};
 use crate::core::manifest::{ServerConfig, minecli_dir, server_file};
@@ -60,6 +63,7 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
         Command::Restore { manifest } => restore(&globals, manifest),
         Command::Sync { source } => sync(&globals, source),
         Command::Modpack { command } => modpack(&globals, command),
+        Command::Datapacks { command } => datapacks(&globals, command),
         Command::Install {
             project,
             kind,
@@ -119,6 +123,88 @@ fn modpack(globals: &GlobalOptions, command: ModpackCommand) -> Result<()> {
         ModpackCommand::Inspect { path } => modpack_inspect(globals, path),
         ModpackCommand::Install { path } => modpack_install(globals, path),
     }
+}
+
+fn datapacks(globals: &GlobalOptions, command: DatapacksCommand) -> Result<()> {
+    match command {
+        DatapacksCommand::List => datapacks_list(globals),
+        DatapacksCommand::Disable { datapack } => datapacks_disable(globals, datapack),
+        DatapacksCommand::Enable { datapack } => datapacks_enable(globals, datapack),
+    }
+}
+
+fn datapacks_list(globals: &GlobalOptions) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let lockfile = load_lockfile(&globals.server_dir)?;
+    let entries = discover_datapacks(&globals.server_dir, &config.paths, &lockfile)?;
+    if entries.is_empty() {
+        println!("No datapacks found.");
+        return Ok(());
+    }
+
+    println!(
+        "{:<24} {:<10} {:<8} {:<8} Path",
+        "Name", "State", "Managed", "Format"
+    );
+    for entry in entries {
+        println!(
+            "{:<24} {:<10} {:<8} {:<8} {}",
+            truncate(&entry.id, 24),
+            if entry.enabled { "enabled" } else { "disabled" },
+            if entry.managed { "yes" } else { "no" },
+            entry
+                .pack_format
+                .map(|format| format.to_string())
+                .unwrap_or_else(|| "-".to_owned()),
+            entry.path.display()
+        );
+        if let Some(description) = entry.description {
+            println!("  {description}");
+        }
+    }
+    Ok(())
+}
+
+fn datapacks_disable(globals: &GlobalOptions, datapack: String) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    if globals.dry_run {
+        println!("Dry run: would disable datapack `{datapack}`.");
+        return Ok(());
+    }
+    let disabled = disable_datapack(&globals.server_dir, &config.paths, &mut lockfile, &datapack)?;
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(
+        &globals.server_dir,
+        format!("disable datapack {}", disabled.id),
+    )?;
+    println!(
+        "Disabled datapack `{}` -> {}",
+        disabled.id,
+        disabled.path.display()
+    );
+    Ok(())
+}
+
+fn datapacks_enable(globals: &GlobalOptions, datapack: String) -> Result<()> {
+    let config = load_server_config(&globals.server_dir)?;
+    let mut lockfile = load_lockfile(&globals.server_dir)?;
+    if globals.dry_run {
+        println!("Dry run: would enable datapack `{datapack}`.");
+        return Ok(());
+    }
+    let enabled = enable_datapack(&globals.server_dir, &config.paths, &mut lockfile, &datapack)?;
+    write_lockfile(&globals.server_dir, &lockfile)?;
+    history::record(
+        &globals.server_dir,
+        format!("enable datapack {}", enabled.id),
+    )?;
+    println!(
+        "Enabled datapack `{}` -> {}",
+        enabled.id,
+        enabled.path.display()
+    );
+    Ok(())
 }
 
 fn modpack_inspect(globals: &GlobalOptions, path: PathBuf) -> Result<()> {
