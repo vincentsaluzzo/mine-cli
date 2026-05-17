@@ -213,6 +213,21 @@ mod tests {
         assert!(lockfile.package_by_query("hangar:same-id").is_some());
     }
 
+    #[test]
+    fn handles_large_lockfiles_without_losing_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let packages = (0..2_000)
+            .map(|index| package("modrinth", &format!("project-{index}"), "1.0.0"))
+            .collect::<Vec<_>>();
+        let lockfile = LockFile { packages };
+
+        write_lockfile(temp.path(), &lockfile).unwrap();
+        let loaded = load_lockfile(temp.path()).unwrap();
+
+        assert_eq!(loaded.packages.len(), 2_000);
+        assert!(loaded.package_by_query("project-1999").is_some());
+    }
+
     fn package(source: &str, project_id: &str, version_id: &str) -> LockedPackage {
         LockedPackage {
             source: source.to_owned(),

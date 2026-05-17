@@ -9,6 +9,7 @@ readme = "README.md"
 
 [dependencies]
 clap = { version = "4.5.50", features = ["derive"] }
+clap_complete = "4.5.61"
 directories = "6.0.0"
 hex = "0.4.3"
 reqwest = { version = "0.12.24", default-features = false, features = ["blocking", "json", "rustls-tls"] }

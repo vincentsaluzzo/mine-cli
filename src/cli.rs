@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::commands;
 use crate::core::server::{ContentKind, ServerType};
@@ -199,6 +199,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ServersCommand,
     },
+    /// Generate shell completions.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -254,6 +259,12 @@ pub struct GlobalOptions {
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::Completions { shell } = &cli.command {
+        let mut command = Cli::command();
+        clap_complete::generate(*shell, &mut command, "minecli", &mut std::io::stdout());
+        return Ok(());
+    }
+
     let config_dir = crate::config::config_dir(cli.config.as_deref())?;
     let server_dir = resolve_server_dir(cli.path, cli.server.as_deref(), &config_dir)?;
     let globals = GlobalOptions {

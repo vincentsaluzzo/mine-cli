@@ -1,0 +1,14 @@
+{
+  "hits": [
+    {
+      "project_id": "P7dR8mSH",
+      "slug": "fabric-api",
+      "title": "Fabric API",
+      "description": "Lightweight and modular API providing common hooks and intercompatibility measures.",
+      "project_type": "mod",
+      "downloads": 100000000,
+      "server_side": "optional",
+      "client_side": "optional"
+    }
+  ]
+}

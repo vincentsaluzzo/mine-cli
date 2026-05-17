@@ -320,35 +320,35 @@ Goal: make MineCLI easy to install, document, and trust.
 
 ### Documentation
 
-- [ ] Write getting started documentation.
-- [ ] Document supported server types.
-- [ ] Document server folder layout.
-- [ ] Document Modrinth behavior.
-- [ ] Document safety behavior.
-- [ ] Document global server registry usage.
-- [ ] Add command examples.
+- [x] Write getting started documentation.
+- [x] Document supported server types.
+- [x] Document server folder layout.
+- [x] Document Modrinth behavior.
+- [x] Document safety behavior.
+- [x] Document global server registry usage.
+- [x] Add command examples.
 
 ### Packaging
 
-- [ ] Build release binaries.
-- [ ] Add shell completions.
-- [ ] Add Homebrew packaging if useful.
-- [ ] Add install script if useful.
-- [ ] Add checksums for releases.
+- [x] Build release binaries.
+- [x] Add shell completions.
+- [x] Add Homebrew packaging if useful.
+- [x] Add install script if useful.
+- [x] Add checksums for releases.
 
 ### Quality
 
-- [ ] Add end-to-end tests for main workflows.
-- [ ] Add fixtures for Modrinth API responses.
-- [ ] Add filesystem sandbox tests.
-- [ ] Add snapshot tests for CLI output.
-- [ ] Add performance checks for large lockfiles.
-- [ ] Add dependency audit tooling.
+- [x] Add end-to-end tests for main workflows.
+- [x] Add fixtures for Modrinth API responses.
+- [x] Add filesystem sandbox tests.
+- [x] Add snapshot tests for CLI output.
+- [x] Add performance checks for large lockfiles.
+- [x] Add dependency audit tooling.
 
 ### Release
 
-- [ ] Define versioning policy.
-- [ ] Create initial `CHANGELOG.md`.
+- [x] Define versioning policy.
+- [x] Create initial `CHANGELOG.md`.
 - [ ] Tag the first alpha release.
 - [ ] Publish binaries.
 - [ ] Collect real-server feedback.

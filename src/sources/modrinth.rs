@@ -409,7 +409,7 @@ mod tests {
 
     use crate::core::server::{ContentKind, ServerType};
     use crate::sources::modrinth::{
-        ModrinthFile, ProjectVersion, ReleaseChannel, SearchParams, select_version,
+        ModrinthFile, ProjectVersion, ReleaseChannel, SearchParams, SearchResponse, select_version,
         version_matches_server,
     };
 
@@ -496,5 +496,15 @@ mod tests {
 
         assert_eq!(params.loader.as_deref(), Some("paper"));
         assert!(!params.server_side_only);
+    }
+
+    #[test]
+    fn parses_search_response_fixture() {
+        let fixture = include_str!("../../tests/fixtures/modrinth/search_response.json");
+
+        let response: SearchResponse = serde_json::from_str(fixture).unwrap();
+
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].slug, "fabric-api");
     }
 }

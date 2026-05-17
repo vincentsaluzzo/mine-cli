@@ -6,7 +6,7 @@ The CLI is designed to be package-source agnostic. Modrinth is the first impleme
 
 ## Current Status
 
-This repository is in Phase 2: real server administration.
+This repository is in Phase 4: polish and distribution for production testing.
 
 The current executable supports:
 
@@ -71,6 +71,11 @@ cargo run -- --path /path/to/docker/volume/_data init --name survival
 
 The implementation roadmap is tracked in:
 
+- [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
+- [docs/SUPPORTED_SERVERS.md](docs/SUPPORTED_SERVERS.md)
+- [docs/SAFETY.md](docs/SAFETY.md)
+- [docs/MODRINTH.md](docs/MODRINTH.md)
+- [docs/PACKAGING.md](docs/PACKAGING.md)
 - [PROJECT_PLAN.md](PROJECT_PLAN.md)
 - [TASKS.md](TASKS.md)
 - [docs/SOURCES.md](docs/SOURCES.md)
@@ -201,6 +206,14 @@ Equivalent Cargo commands:
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
+```
+
+Production-oriented commands:
+
+```bash
+make release
+make checksums
+make completions
 ```
 
 Live integration tests are ignored by default because they download real Fabric, Purpur, Forge, and NeoForge server artifacts and install packages from external sources:

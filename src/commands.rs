@@ -100,6 +100,7 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
         } => remove(&globals, project, remove_orphans),
         Command::Doctor { fix } => doctor(&globals, fix),
         Command::Servers { command } => servers(&globals, command),
+        Command::Completions { .. } => Ok(()),
     }
 }
 
