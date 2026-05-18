@@ -6,6 +6,10 @@ rust-version = "1.85"
 description = "A CLI for managing Minecraft server mods, datapacks, and plugins."
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/vincentsaluzzo/mine-cli"
+homepage = "https://github.com/vincentsaluzzo/mine-cli"
+keywords = ["minecraft", "server", "mods", "datapacks", "plugins"]
+categories = ["command-line-utilities", "games"]
 
 [dependencies]
 clap = { version = "4.5.50", features = ["derive"] }

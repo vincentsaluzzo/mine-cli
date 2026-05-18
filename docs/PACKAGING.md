@@ -1,5 +1,31 @@
 # Packaging
 
+## Cargo Install
+
+Install directly from GitHub:
+
+```bash
+cargo install --git https://github.com/vincentsaluzzo/mine-cli minecli
+```
+
+After MineCLI is published to crates.io:
+
+```bash
+cargo install minecli
+```
+
+Prepare the package locally before publishing:
+
+```bash
+make package
+```
+
+Publish manually with a crates.io token:
+
+```bash
+cargo publish
+```
+
 ## Install From GitHub Releases
 
 ```bash

@@ -1,4 +1,4 @@
-.PHONY: fmt lint test check release checksums completions audit
+.PHONY: fmt lint test check release package checksums completions audit
 
 fmt:
 	cargo fmt --check
@@ -13,6 +13,9 @@ check: fmt lint test
 
 release:
 	cargo build --release
+
+package:
+	cargo package
 
 checksums: release
 	shasum -a 256 target/release/minecli > target/release/minecli.sha256

@@ -12,6 +12,7 @@ This file is the implementation checklist. Work through it phase by phase. Keep 
 - [x] Add formatting and linting commands.
 - [x] Add a test command.
 - [x] Add CI once the first code exists.
+- [x] Add Cargo package metadata for global installation.
 
 ## Phase 1: Local Server MVP
 

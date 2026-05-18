@@ -10,10 +10,22 @@ This repository is in Phase 4: polish and distribution for production testing.
 
 The current executable supports:
 
-Install latest release:
+Install from the GitHub release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vincentsaluzzo/mine-cli/main/scripts/install-release.sh | sh
+```
+
+Install globally with Cargo from Git:
+
+```bash
+cargo install --git https://github.com/vincentsaluzzo/mine-cli minecli
+```
+
+Once MineCLI is published to crates.io, installation will become:
+
+```bash
+cargo install minecli
 ```
 
 ```bash
