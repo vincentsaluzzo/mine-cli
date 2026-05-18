@@ -15,10 +15,12 @@ MINECLI_VERSION=v0.1.0 sh -c "$(curl -fsSL https://raw.githubusercontent.com/vin
 The installer downloads the matching binary for:
 
 - `x86_64-unknown-linux-gnu`
-- `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
 
 It verifies the release checksum when `shasum` is available.
+
+macOS Intel users can install from source with `./scripts/install.sh` until an
+Intel binary is added to the release workflow.
 
 ## Local Release Build
 

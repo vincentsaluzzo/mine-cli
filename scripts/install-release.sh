@@ -14,7 +14,9 @@ case "$os:$arch" in
     target="x86_64-unknown-linux-gnu"
     ;;
   Darwin:x86_64)
-    target="x86_64-apple-darwin"
+    echo "No prebuilt MineCLI release is available for macOS Intel yet." >&2
+    echo "Install from source with ./scripts/install.sh instead." >&2
+    exit 1
     ;;
   Darwin:arm64)
     target="aarch64-apple-darwin"
@@ -26,7 +28,7 @@ case "$os:$arch" in
 esac
 
 if [ "$VERSION" = "latest" ]; then
-  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
   if [ -z "$VERSION" ]; then
     echo "Could not resolve latest MineCLI release" >&2
     exit 1
