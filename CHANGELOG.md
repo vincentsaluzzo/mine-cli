@@ -4,6 +4,14 @@ All notable changes to MineCLI are documented here.
 
 The project follows the versioning policy in [docs/VERSIONING.md](docs/VERSIONING.md).
 
+## 0.1.1 - 2026-05-22
+
+### Changed
+
+- Search now behaves like Modrinth discovery by default instead of silently filtering by the current server.
+- Added explicit search filters for `--minecraft`, `--loader`, and `--server-compatible`.
+- Search results now render as readable numbered blocks with compact downloads, version summaries, and terminal color when supported.
+
 ## 0.1.0 - 2026-05-17
 
 ### Added
