@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
+use std::env;
 use std::fs;
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
@@ -540,27 +542,104 @@ fn search(globals: &GlobalOptions, options: SearchOptions) -> Result<()> {
         return Ok(());
     }
 
+    let color = color_enabled();
     println!(
-        "{:<24} {:<10} {:<12} {:<12} {:>10} Title",
-        "Slug", "Kind", "Server", "Client", "Downloads"
+        "{} {}",
+        style(color, "1;36", "Search results:"),
+        response.hits.len()
     );
-    for hit in response.hits {
-        println!(
-            "{:<24} {:<10} {:<12} {:<12} {:>10} {}",
-            truncate(&hit.slug, 24),
-            hit.project_type,
-            hit.server_side,
-            hit.client_side,
-            hit.downloads,
-            hit.title
-        );
-        println!("  {} | {}", hit.project_id, hit.description);
-        if options.all_versions || minecraft_version.is_none() {
-            println!("  versions: {}", summarize_versions(&hit.versions));
+    for (index, hit) in response.hits.iter().enumerate() {
+        if index > 0 {
+            println!();
         }
+        print_search_hit(
+            index + 1,
+            hit,
+            options.all_versions || minecraft_version.is_none(),
+            color,
+        );
     }
 
     Ok(())
+}
+
+fn print_search_hit(
+    index: usize,
+    hit: &crate::sources::modrinth::SearchHit,
+    show_versions: bool,
+    color: bool,
+) {
+    println!(
+        "{} {}",
+        style(color, "1;32", &format!("{index:>2}.")),
+        style(color, "1", &hit.title)
+    );
+    println!(
+        "    {} {}   {} {}   {} {}",
+        style(color, "2", "slug:"),
+        style(color, "36", &hit.slug),
+        style(color, "2", "id:"),
+        hit.project_id,
+        style(color, "2", "downloads:"),
+        format_downloads(hit.downloads)
+    );
+    println!(
+        "    {} {}   {} {}   {} {}",
+        style(color, "2", "kind:"),
+        style(color, "35", &hit.project_type),
+        style(color, "2", "server:"),
+        style_side(color, &hit.server_side),
+        style(color, "2", "client:"),
+        style_side(color, &hit.client_side)
+    );
+    if show_versions {
+        println!(
+            "    {} {}",
+            style(color, "2", "versions:"),
+            summarize_versions(&hit.versions)
+        );
+    }
+    println!("    {}", indent_multiline(&hit.description, "    "));
+}
+
+fn color_enabled() -> bool {
+    env::var_os("NO_COLOR").is_none()
+        && (env::var_os("CLICOLOR_FORCE").is_some() || io::stdout().is_terminal())
+}
+
+fn style(enabled: bool, code: &str, value: &str) -> String {
+    if enabled {
+        format!("\x1b[{code}m{value}\x1b[0m")
+    } else {
+        value.to_owned()
+    }
+}
+
+fn style_side(enabled: bool, value: &str) -> String {
+    let code = match value {
+        "required" => "32",
+        "optional" => "33",
+        "unsupported" => "31",
+        _ => "37",
+    };
+    style(enabled, code, value)
+}
+
+fn format_downloads(downloads: u64) -> String {
+    if downloads >= 1_000_000 {
+        format!("{:.2}M", downloads as f64 / 1_000_000.0)
+    } else if downloads >= 1_000 {
+        format!("{:.1}K", downloads as f64 / 1_000.0)
+    } else {
+        downloads.to_string()
+    }
+}
+
+fn indent_multiline(value: &str, indent: &str) -> String {
+    value
+        .lines()
+        .collect::<Vec<_>>()
+        .join(&format!("\n{indent}"))
 }
 
 fn summarize_versions(versions: &[String]) -> String {
@@ -2484,6 +2563,21 @@ mod tests {
         assert_eq!(
             super::summarize_versions(&versions),
             "1.20, 1.20.1, 1.21, 1.21.1, ..., 1.21.6, 26.1, 26.1.1, 26.1.2"
+        );
+    }
+
+    #[test]
+    fn formats_search_downloads_compactly() {
+        assert_eq!(super::format_downloads(618), "618");
+        assert_eq!(super::format_downloads(12_340), "12.3K");
+        assert_eq!(super::format_downloads(11_144_608), "11.14M");
+    }
+
+    #[test]
+    fn indents_multiline_search_descriptions() {
+        assert_eq!(
+            super::indent_multiline("first\nsecond", "    "),
+            "first\n    second"
         );
     }
 
