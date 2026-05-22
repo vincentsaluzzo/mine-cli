@@ -528,7 +528,7 @@ fn search(globals: &GlobalOptions, options: SearchOptions) -> Result<()> {
         SearchParams {
             query: options.query,
             minecraft_version: minecraft_version.clone(),
-            loader: options.loader,
+            loaders: options.loader.into_iter().collect(),
             kind: options.kind,
             server_side_only: options.server_compatible && !options.all_sides,
             limit: options.limit,
@@ -1581,17 +1581,14 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             if !self.config.server_type.supports(*kind) {
                 continue;
             }
-            let loader = self
-                .config
-                .server_type
-                .modrinth_loader(*kind)
-                .map(ToOwned::to_owned);
+            let loaders = compatible_loaders(self.config.server_type, *kind);
             let versions = self.client.get_project_versions(
                 &project.id,
-                &loader.iter().cloned().collect::<Vec<_>>(),
+                &loaders,
                 std::slice::from_ref(&self.config.minecraft_version),
             )?;
             if let Some(version) = select_version(&versions, requested_version, self.channel) {
+                let loader = matched_loader(version, &loaders);
                 if *kind != declared_kind && requested_kind.is_none() {
                     println!(
                         "Using {} install for {} because it has a compatible {} version.",
@@ -1614,7 +1611,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
 
         let loaders = candidates
             .iter()
-            .filter_map(|kind| self.config.server_type.modrinth_loader(*kind))
+            .flat_map(|kind| compatible_loaders(self.config.server_type, *kind))
             .collect::<Vec<_>>();
         Err(MinecliError::message(format!(
             "no compatible {} version found for Minecraft {}{}",
@@ -1637,8 +1634,8 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             let version = self.client.get_version(version_id)?;
             let project = self.client.get_project(dependency_project_id)?;
             let kind = content_kind_from_project_type(&project.project_type)?;
-            let loader = self.config.server_type.modrinth_loader(kind);
-            if version_matches_server(&version, &self.config.minecraft_version, loader) {
+            let loaders = compatible_loaders(self.config.server_type, kind);
+            if version_matches_server(&version, &self.config.minecraft_version, &loaders) {
                 return self.resolve(
                     dependency_project_id,
                     Some(kind),
@@ -1669,6 +1666,22 @@ fn install_kind_candidates(
         candidates.push(declared_kind);
     }
     candidates
+}
+
+fn compatible_loaders(server_type: ServerType, kind: ContentKind) -> Vec<String> {
+    server_type
+        .modrinth_loaders(kind)
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn matched_loader(version: &ProjectVersion, compatible_loaders: &[String]) -> Option<String> {
+    compatible_loaders
+        .iter()
+        .find(|loader| version.loaders.iter().any(|item| item == *loader))
+        .cloned()
+        .or_else(|| compatible_loaders.first().cloned())
 }
 
 fn print_install_plan(plan: &[PlannedInstall], dry_run: bool) {
@@ -1986,10 +1999,7 @@ fn import_package_from_file<S: ProjectSource>(
         slug: project.slug.clone(),
         title: project.title,
         kind,
-        loader: config
-            .server_type
-            .modrinth_loader(kind)
-            .map(ToOwned::to_owned),
+        loader: matched_loader(&version, &compatible_loaders(config.server_type, kind)),
         version_id: version.id.clone(),
         source_version_id: Some(version.id),
         version_number: version.version_number,
@@ -2060,15 +2070,14 @@ fn latest_compatible_version<S: ProjectSource>(
     package: &LockedPackage,
     channel: ReleaseChannel,
 ) -> Result<Option<ProjectVersion>> {
-    let loader = package.loader.clone().or_else(|| {
-        config
-            .server_type
-            .modrinth_loader(package.kind)
-            .map(ToOwned::to_owned)
-    });
+    let loaders = package
+        .loader
+        .clone()
+        .map(|loader| vec![loader])
+        .unwrap_or_else(|| compatible_loaders(config.server_type, package.kind));
     let versions = source.get_project_versions(
         package.source_project_id_or_project_id(),
-        &loader.into_iter().collect::<Vec<_>>(),
+        &loaders,
         std::slice::from_ref(&config.minecraft_version),
     )?;
 
@@ -2659,6 +2668,32 @@ mod tests {
     }
 
     #[test]
+    fn install_resolver_accepts_spigot_plugin_versions_on_purpur() {
+        let source = MockSource::new()
+            .with_project(project("plugin"))
+            .with_versions(
+                "plugin",
+                vec![version_with_loaders(
+                    "plugin-spigot",
+                    "plugin",
+                    "1.0.0",
+                    vec!["spigot"],
+                )],
+            );
+        let mut config = config();
+        config.server_type = ServerType::Purpur;
+        let lockfile = LockFile::default();
+        let mut resolver =
+            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+
+        let plan = resolver.resolve("plugin", None, None, false).unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].locked_package.kind, ContentKind::Plugin);
+        assert_eq!(plan[0].locked_package.loader.as_deref(), Some("spigot"));
+    }
+
+    #[test]
     fn outdated_planning_detects_registry_packages_and_skips_local_sources() {
         let source = MockSource::new().with_versions(
             "root",
@@ -3049,6 +3084,17 @@ mod tests {
             dependencies,
             files: vec![file(&format!("{project_id}.jar"))],
         }
+    }
+
+    fn version_with_loaders(
+        id: &str,
+        project_id: &str,
+        version_number: &str,
+        loaders: Vec<&str>,
+    ) -> ProjectVersion {
+        let mut version = version(id, project_id, version_number, vec![]);
+        version.loaders = loaders.into_iter().map(ToOwned::to_owned).collect();
+        version
     }
 
     fn required_dependency(project_id: &str) -> VersionDependency {

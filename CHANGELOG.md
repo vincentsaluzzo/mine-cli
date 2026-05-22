@@ -11,6 +11,7 @@ The project follows the versioning policy in [docs/VERSIONING.md](docs/VERSIONIN
 - Search now behaves like Modrinth discovery by default instead of silently filtering by the current server.
 - Added explicit search filters for `--minecraft`, `--loader`, and `--server-compatible`.
 - Search results now render as readable numbered blocks with compact downloads, version summaries, and terminal color when supported.
+- Purpur/Paper plugin compatibility now checks Paper, Spigot, and Bukkit Modrinth artifacts where applicable.
 
 ## 0.1.0 - 2026-05-17
 

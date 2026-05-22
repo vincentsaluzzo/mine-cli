@@ -50,8 +50,14 @@ impl ModrinthClient {
         if let Some(kind) = params.kind {
             facets.push(vec![format!("project_type:{kind}")]);
         }
-        if let Some(loader) = &params.loader {
-            facets.push(vec![format!("categories:{loader}")]);
+        if !params.loaders.is_empty() {
+            facets.push(
+                params
+                    .loaders
+                    .iter()
+                    .map(|loader| format!("categories:{loader}"))
+                    .collect(),
+            );
         }
         if params.server_side_only {
             facets.push(vec![
@@ -218,7 +224,7 @@ impl ProjectSource for ModrinthClient {
 pub struct SearchParams {
     pub query: String,
     pub minecraft_version: Option<String>,
-    pub loader: Option<String>,
+    pub loaders: Vec<String>,
     pub kind: Option<ContentKind>,
     pub server_side_only: bool,
     pub limit: usize,
@@ -233,22 +239,36 @@ impl SearchParams {
         limit: usize,
         server_side_only: bool,
     ) -> Self {
-        let loader = match kind {
+        let loaders = match kind {
             Some(kind) => server_type
-                .and_then(|server_type| server_type.modrinth_loader(kind))
-                .map(ToOwned::to_owned),
-            None => server_type.and_then(|server_type| match server_type {
-                ServerType::Vanilla | ServerType::Unknown => None,
-                ServerType::Purpur | ServerType::Folia => Some("paper".to_owned()),
-                ServerType::Bukkit => Some("spigot".to_owned()),
-                server_type => Some(server_type.as_str().to_owned()),
-            }),
+                .map(|server_type| {
+                    server_type
+                        .modrinth_loaders(kind)
+                        .into_iter()
+                        .map(ToOwned::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => server_type
+                .map(|server_type| {
+                    if matches!(server_type, ServerType::Vanilla | ServerType::Unknown) {
+                        Vec::new()
+                    } else {
+                        server_type
+                            .modrinth_loaders(ContentKind::Plugin)
+                            .into_iter()
+                            .chain(server_type.modrinth_loaders(ContentKind::Mod))
+                            .map(ToOwned::to_owned)
+                            .collect()
+                    }
+                })
+                .unwrap_or_default(),
         };
 
         Self {
             query,
             minecraft_version,
-            loader,
+            loaders,
             kind,
             server_side_only,
             limit,
@@ -396,13 +416,16 @@ pub fn select_version<'a>(
 pub fn version_matches_server(
     version: &ProjectVersion,
     minecraft_version: &str,
-    loader: Option<&str>,
+    loaders: &[String],
 ) -> bool {
     version
         .game_versions
         .iter()
         .any(|version| version == minecraft_version)
-        && loader.is_none_or(|loader| version.loaders.iter().any(|item| item == loader))
+        && (loaders.is_empty()
+            || loaders
+                .iter()
+                .any(|loader| version.loaders.iter().any(|item| item == loader)))
 }
 
 #[cfg(test)]
@@ -462,9 +485,21 @@ mod tests {
     fn checks_version_compatibility() {
         let selected = version("id-1", "1.0.0", ReleaseChannel::Release);
 
-        assert!(version_matches_server(&selected, "1.21.5", Some("fabric")));
-        assert!(!version_matches_server(&selected, "1.20.1", Some("fabric")));
-        assert!(!version_matches_server(&selected, "1.21.5", Some("forge")));
+        assert!(version_matches_server(
+            &selected,
+            "1.21.5",
+            &["fabric".to_owned()]
+        ));
+        assert!(!version_matches_server(
+            &selected,
+            "1.20.1",
+            &["fabric".to_owned()]
+        ));
+        assert!(!version_matches_server(
+            &selected,
+            "1.21.5",
+            &["forge".to_owned()]
+        ));
     }
 
     #[test]
@@ -479,7 +514,7 @@ mod tests {
         );
 
         assert_eq!(params.minecraft_version.as_deref(), Some("1.21.5"));
-        assert_eq!(params.loader.as_deref(), Some("fabric"));
+        assert_eq!(params.loaders, vec!["fabric"]);
         assert_eq!(params.kind, Some(ContentKind::Mod));
         assert!(params.server_side_only);
         assert_eq!(params.limit, 5);
@@ -496,7 +531,7 @@ mod tests {
             false,
         );
 
-        assert_eq!(params.loader.as_deref(), Some("paper"));
+        assert_eq!(params.loaders, vec!["paper", "spigot", "bukkit"]);
         assert!(!params.server_side_only);
     }
 

@@ -117,15 +117,21 @@ impl ServerType {
     }
 
     pub fn modrinth_loader(self, kind: ContentKind) -> Option<&'static str> {
+        self.modrinth_loaders(kind).first().copied()
+    }
+
+    pub fn modrinth_loaders(self, kind: ContentKind) -> Vec<&'static str> {
         match kind {
-            ContentKind::Datapack => Some("datapack"),
-            ContentKind::Mod if self.supports(kind) => Some(self.as_str()),
-            ContentKind::Plugin if self.supports(kind) => Some(match self {
-                Self::Purpur | Self::Folia => "paper",
-                Self::Bukkit => "spigot",
-                server_type => server_type.as_str(),
-            }),
-            _ => None,
+            ContentKind::Datapack => vec!["datapack"],
+            ContentKind::Mod if self.supports(kind) => vec![self.as_str()],
+            ContentKind::Plugin if self.supports(kind) => match self {
+                Self::Purpur => vec!["paper", "spigot", "bukkit"],
+                Self::Paper | Self::Folia => vec!["paper", "spigot", "bukkit"],
+                Self::Spigot => vec!["spigot", "bukkit"],
+                Self::Bukkit => vec!["bukkit"],
+                server_type => vec![server_type.as_str()],
+            },
+            _ => Vec::new(),
         }
     }
 }
