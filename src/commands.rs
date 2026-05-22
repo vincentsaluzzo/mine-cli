@@ -57,7 +57,8 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             kind,
             limit,
             all_sides,
-        } => search(&globals, query, kind, limit, all_sides),
+            all_versions,
+        } => search(&globals, query, kind, limit, all_sides, all_versions),
         Command::Import => import_existing(&globals),
         Command::Export { output } => export(&globals, output),
         Command::Restore { manifest } => restore(&globals, manifest),
@@ -479,13 +480,19 @@ fn search(
     kind: Option<ContentKind>,
     limit: usize,
     all_sides: bool,
+    all_versions: bool,
 ) -> Result<()> {
     let context = optional_server_context(&globals.server_dir)?;
-    let params = SearchParams::for_server(
-        query,
+    let minecraft_version = if all_versions {
+        None
+    } else {
         context
             .as_ref()
-            .map(|config| config.minecraft_version.clone()),
+            .map(|config| config.minecraft_version.clone())
+    };
+    let params = SearchParams::for_server(
+        query,
+        minecraft_version,
         context.as_ref().map(|config| config.server_type),
         kind,
         limit,
@@ -514,9 +521,30 @@ fn search(
             hit.title
         );
         println!("  {} | {}", hit.project_id, hit.description);
+        if all_versions {
+            println!("  versions: {}", summarize_versions(&hit.versions));
+        }
     }
 
     Ok(())
+}
+
+fn summarize_versions(versions: &[String]) -> String {
+    const EDGE_COUNT: usize = 4;
+    if versions.is_empty() {
+        return "unknown".to_owned();
+    }
+    if versions.len() <= EDGE_COUNT * 2 {
+        return versions.join(", ");
+    }
+
+    let prefix = versions.iter().take(EDGE_COUNT).cloned();
+    let suffix = versions.iter().skip(versions.len() - EDGE_COUNT).cloned();
+    prefix
+        .chain(std::iter::once("...".to_owned()))
+        .chain(suffix)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn import_existing(globals: &GlobalOptions) -> Result<()> {
@@ -2410,6 +2438,21 @@ mod tests {
         collect_orphan_dependencies(&lockfile, &mut to_remove);
 
         assert_eq!(to_remove, vec!["root", "dep"]);
+    }
+
+    #[test]
+    fn summarizes_search_versions_with_latest_edge_visible() {
+        let versions = [
+            "1.20", "1.20.1", "1.21", "1.21.1", "1.21.5", "1.21.6", "26.1", "26.1.1", "26.1.2",
+        ]
+        .into_iter()
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+
+        assert_eq!(
+            super::summarize_versions(&versions),
+            "1.20, 1.20.1, 1.21, 1.21.1, ..., 1.21.6, 26.1, 26.1.1, 26.1.2"
+        );
     }
 
     #[test]

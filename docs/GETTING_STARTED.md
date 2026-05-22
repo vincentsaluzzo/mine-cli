@@ -93,6 +93,7 @@ Search and install:
 
 ```bash
 minecli --server survival search bluemap
+minecli --server survival search farmers-delight-refabricated --all-versions
 minecli --server survival --dry-run install bluemap
 minecli --server survival install bluemap
 ```

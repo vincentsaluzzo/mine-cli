@@ -272,6 +272,8 @@ pub struct SearchHit {
     pub server_side: String,
     #[serde(default)]
     pub client_side: String,
+    #[serde(default)]
+    pub versions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

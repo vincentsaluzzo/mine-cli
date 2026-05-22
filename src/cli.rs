@@ -87,6 +87,12 @@ pub enum Command {
 
         #[arg(long, help = "Include packages not marked server-side compatible")]
         all_sides: bool,
+
+        #[arg(
+            long,
+            help = "Do not filter by the configured Minecraft version and show compatible versions"
+        )]
+        all_versions: bool,
     },
     /// Import existing files from mods, plugins, and datapack folders.
     Import,

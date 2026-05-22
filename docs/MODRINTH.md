@@ -10,9 +10,14 @@ Search uses the server's configured Minecraft version and loader where possible:
 minecli --server survival search bluemap
 minecli --server survival search fabric-api --kind mod
 minecli --server survival search minimap --all-sides
+minecli --server survival search farmers-delight-refabricated --all-versions
 ```
 
 By default, MineCLI hides projects not marked useful on servers. `--all-sides` removes that filter for inspection.
+
+By default, MineCLI also filters search results to the Minecraft version in
+`.minecli/server.toml`. `--all-versions` removes that version filter and prints
+the compatible game versions reported by Modrinth for each result.
 
 ## Install
 
