@@ -33,7 +33,9 @@ cargo run -- --help
 cargo run -- --version
 cargo run -- --path /srv/minecraft/survival init --type fabric --minecraft 1.21.5
 cargo run -- --path /srv/minecraft/survival init
-cargo run -- --path /srv/minecraft/survival search fabric-api --kind mod
+cargo run -- --path /srv/minecraft/survival search farmers --kind mod --limit 50
+cargo run -- --path /srv/minecraft/survival search fabric-api --kind mod --loader fabric
+cargo run -- --path /srv/minecraft/survival search bluemap --server-compatible
 cargo run -- --path /srv/minecraft/survival search minimap --all-sides
 cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated
 cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated --minecraft 26.1.2

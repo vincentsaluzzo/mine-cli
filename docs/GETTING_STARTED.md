@@ -92,7 +92,8 @@ minecli --server survival import
 Search and install:
 
 ```bash
-minecli --server survival search bluemap
+minecli --server survival search farmers --kind mod --limit 50
+minecli --server survival search bluemap --server-compatible
 minecli --server survival search farmers-delight-refabricated
 minecli --server survival search farmers-delight-refabricated --minecraft 26.1.2
 minecli --server survival --dry-run install bluemap

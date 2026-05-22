@@ -82,10 +82,26 @@ pub enum Command {
         #[arg(long, value_enum, help = "Limit search to a content kind")]
         kind: Option<ContentKind>,
 
-        #[arg(long, default_value_t = 10, help = "Maximum number of results")]
+        #[arg(long, default_value_t = 20, help = "Maximum number of results")]
         limit: usize,
 
-        #[arg(long, help = "Include packages not marked server-side compatible")]
+        #[arg(
+            long,
+            help = "Filter by the current server loader/platform and server-side support"
+        )]
+        server_compatible: bool,
+
+        #[arg(
+            long,
+            value_name = "LOADER",
+            help = "Only show packages for this Modrinth loader or platform"
+        )]
+        loader: Option<String>,
+
+        #[arg(
+            long,
+            help = "With --server-compatible, include packages not marked server-side compatible"
+        )]
         all_sides: bool,
 
         #[arg(

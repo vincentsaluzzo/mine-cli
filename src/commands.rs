@@ -56,17 +56,23 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             query,
             kind,
             limit,
+            server_compatible,
+            loader,
             all_sides,
             minecraft,
             all_versions,
         } => search(
             &globals,
-            query,
-            kind,
-            limit,
-            all_sides,
-            minecraft,
-            all_versions,
+            SearchOptions {
+                query,
+                kind,
+                limit,
+                server_compatible,
+                loader,
+                all_sides,
+                minecraft,
+                all_versions,
+            },
         ),
         Command::Import => import_existing(&globals),
         Command::Export { output } => export(&globals, output),
@@ -483,26 +489,49 @@ fn status(globals: &GlobalOptions) -> Result<()> {
     Ok(())
 }
 
-fn search(
-    globals: &GlobalOptions,
+struct SearchOptions {
     query: String,
     kind: Option<ContentKind>,
     limit: usize,
+    server_compatible: bool,
+    loader: Option<String>,
     all_sides: bool,
     minecraft: Option<String>,
     all_versions: bool,
-) -> Result<()> {
+}
+
+fn search(globals: &GlobalOptions, options: SearchOptions) -> Result<()> {
     let context = optional_server_context(&globals.server_dir)?;
     let server_type = context.as_ref().map(|config| config.server_type);
-    let minecraft_version = minecraft.filter(|version| !version.trim().is_empty());
-    let params = SearchParams::for_server(
-        query,
-        minecraft_version.clone(),
-        server_type,
-        kind,
-        limit,
-        !all_sides,
-    );
+    if options.server_compatible
+        && let (Some(server_type), Some(kind)) = (server_type, options.kind)
+        && !server_type.supports(kind)
+    {
+        println!("No matching packages found.");
+        return Ok(());
+    }
+    let minecraft_version = options
+        .minecraft
+        .filter(|version| !version.trim().is_empty());
+    let params = if options.server_compatible && options.loader.is_none() {
+        SearchParams::for_server(
+            options.query,
+            minecraft_version.clone(),
+            server_type,
+            options.kind,
+            options.limit,
+            !options.all_sides,
+        )
+    } else {
+        SearchParams {
+            query: options.query,
+            minecraft_version: minecraft_version.clone(),
+            loader: options.loader,
+            kind: options.kind,
+            server_side_only: options.server_compatible && !options.all_sides,
+            limit: options.limit,
+        }
+    };
     let client = ModrinthClient::new()?;
     let response = client.search(&params)?;
 
@@ -526,7 +555,7 @@ fn search(
             hit.title
         );
         println!("  {} | {}", hit.project_id, hit.description);
-        if all_versions || minecraft_version.is_none() {
+        if options.all_versions || minecraft_version.is_none() {
             println!("  versions: {}", summarize_versions(&hit.versions));
         }
     }

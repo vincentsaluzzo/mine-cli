@@ -4,22 +4,27 @@ Modrinth is MineCLI's first implemented registry source.
 
 ## Search
 
-Search uses the server's loader where possible, but does not filter by Minecraft
-version unless explicitly requested:
+Search behaves like Modrinth discovery by default: it does not filter by the
+server's loader, server-side metadata, or Minecraft version unless explicitly
+requested.
 
 ```bash
-minecli --server survival search bluemap
-minecli --server survival search fabric-api --kind mod
-minecli --server survival search minimap --all-sides
+minecli --server survival search farmers --kind mod --limit 50
+minecli --server survival search fabric-api --kind mod --loader fabric
+minecli --server survival search bluemap --server-compatible
 minecli --server survival search farmers-delight-refabricated
 minecli --server survival search farmers-delight-refabricated --minecraft 26.1.2
 ```
 
-By default, MineCLI hides projects not marked useful on servers. `--all-sides` removes that filter for inspection.
+Use `--server-compatible` when you want MineCLI to filter using the current
+server's loader/platform and server-side support. Add `--all-sides` with
+`--server-compatible` to keep the server loader/platform filter but include
+projects not marked useful on servers.
 
 Search output prints the compatible game versions reported by Modrinth for each
 result. Use `--minecraft <version>` when you want to restrict results to one
-Minecraft version.
+Minecraft version. Use `--loader <loader>` when you want to filter to a specific
+Modrinth loader or platform such as `fabric`, `neoforge`, or `paper`.
 
 ## Install
 
