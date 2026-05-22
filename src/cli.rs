@@ -90,7 +90,15 @@ pub enum Command {
 
         #[arg(
             long,
-            help = "Do not filter by the configured Minecraft version and show compatible versions"
+            value_name = "VERSION",
+            help = "Only show packages compatible with this Minecraft version"
+        )]
+        minecraft: Option<String>,
+
+        #[arg(
+            long,
+            hide = true,
+            help = "Deprecated compatibility flag; search is unversioned by default"
         )]
         all_versions: bool,
     },

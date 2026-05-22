@@ -35,7 +35,8 @@ cargo run -- --path /srv/minecraft/survival init --type fabric --minecraft 1.21.
 cargo run -- --path /srv/minecraft/survival init
 cargo run -- --path /srv/minecraft/survival search fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival search minimap --all-sides
-cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated --all-versions
+cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated
+cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated --minecraft 26.1.2
 cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind mod
 cargo run -- --path /srv/minecraft/survival install --file ./mods/example.jar --kind mod
 cargo run -- --path /srv/minecraft/survival install --folder ./mods-to-install --kind mod

@@ -29,7 +29,7 @@ use crate::error::{IoResultExt, MinecliError, Result};
 use crate::fsops::{cache_dir, copy_verified_download, verify_file_hash};
 use crate::sources::modrinth::{
     DependencyType, ModrinthClient, ModrinthFile, ProjectSource, ProjectVersion, ReleaseChannel,
-    SearchParams, SearchResponse, select_version, version_matches_server,
+    SearchParams, select_version, version_matches_server,
 };
 use crate::sources::{SourceId, is_registry_source};
 
@@ -57,8 +57,17 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             kind,
             limit,
             all_sides,
+            minecraft,
             all_versions,
-        } => search(&globals, query, kind, limit, all_sides, all_versions),
+        } => search(
+            &globals,
+            query,
+            kind,
+            limit,
+            all_sides,
+            minecraft,
+            all_versions,
+        ),
         Command::Import => import_existing(&globals),
         Command::Export { output } => export(&globals, output),
         Command::Restore { manifest } => restore(&globals, manifest),
@@ -480,35 +489,22 @@ fn search(
     kind: Option<ContentKind>,
     limit: usize,
     all_sides: bool,
+    minecraft: Option<String>,
     all_versions: bool,
 ) -> Result<()> {
     let context = optional_server_context(&globals.server_dir)?;
-    let configured_minecraft_version = context
-        .as_ref()
-        .map(|config| config.minecraft_version.clone());
     let server_type = context.as_ref().map(|config| config.server_type);
+    let minecraft_version = minecraft.filter(|version| !version.trim().is_empty());
     let params = SearchParams::for_server(
-        query.clone(),
-        configured_minecraft_version.clone(),
+        query,
+        minecraft_version.clone(),
         server_type,
         kind,
         limit,
         !all_sides,
     );
     let client = ModrinthClient::new()?;
-    let response = if all_versions {
-        let unversioned_params =
-            SearchParams::for_server(query, None, server_type, kind, limit, !all_sides);
-        let unversioned = client.search(&unversioned_params)?;
-        let versioned = if configured_minecraft_version.is_some() {
-            Some(client.search(&params)?)
-        } else {
-            None
-        };
-        merge_search_responses(unversioned, versioned)
-    } else {
-        client.search(&params)?
-    };
+    let response = client.search(&params)?;
 
     if response.hits.is_empty() {
         println!("No matching packages found.");
@@ -530,34 +526,12 @@ fn search(
             hit.title
         );
         println!("  {} | {}", hit.project_id, hit.description);
-        if all_versions {
+        if all_versions || minecraft_version.is_none() {
             println!("  versions: {}", summarize_versions(&hit.versions));
         }
     }
 
     Ok(())
-}
-
-fn merge_search_responses(
-    mut primary: SearchResponse,
-    secondary: Option<SearchResponse>,
-) -> SearchResponse {
-    let mut seen = primary
-        .hits
-        .iter()
-        .map(|hit| hit.project_id.clone())
-        .collect::<HashSet<_>>();
-
-    if let Some(secondary) = secondary {
-        primary.hits.extend(
-            secondary
-                .hits
-                .into_iter()
-                .filter(|hit| seen.insert(hit.project_id.clone())),
-        );
-    }
-
-    primary
 }
 
 fn summarize_versions(versions: &[String]) -> String {
@@ -1316,7 +1290,6 @@ fn package_metadata_issues(lockfile: &LockFile, verbose: bool) -> Vec<String> {
 
 #[derive(Debug, Clone)]
 struct ServerContext {
-    minecraft_version: String,
     server_type: ServerType,
 }
 
@@ -1327,7 +1300,6 @@ fn optional_server_context(server_dir: &Path) -> Result<Option<ServerContext>> {
     }
     let config = load_server_config(server_dir)?;
     Ok(Some(ServerContext {
-        minecraft_version: config.minecraft_version,
         server_type: config.server_type,
     }))
 }
@@ -2433,7 +2405,7 @@ mod tests {
     use crate::core::server::ServerType;
     use crate::sources::modrinth::{
         DependencyType, ModrinthFile, Project, ProjectSource, ProjectVersion, ReleaseChannel,
-        SearchHit, SearchResponse, VersionDependency,
+        VersionDependency,
     };
 
     fn package(project_id: &str, dependencies: Vec<String>, as_dependency: bool) -> LockedPackage {
@@ -2484,41 +2456,6 @@ mod tests {
             super::summarize_versions(&versions),
             "1.20, 1.20.1, 1.21, 1.21.1, ..., 1.21.6, 26.1, 26.1.1, 26.1.2"
         );
-    }
-
-    #[test]
-    fn all_versions_search_keeps_version_filtered_results() {
-        let primary = SearchResponse {
-            hits: vec![search_hit("unversioned")],
-        };
-        let secondary = SearchResponse {
-            hits: vec![search_hit("unversioned"), search_hit("versioned")],
-        };
-
-        let merged = super::merge_search_responses(primary, Some(secondary));
-
-        assert_eq!(
-            merged
-                .hits
-                .iter()
-                .map(|hit| hit.project_id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["unversioned", "versioned"]
-        );
-    }
-
-    fn search_hit(project_id: &str) -> SearchHit {
-        SearchHit {
-            project_id: project_id.to_owned(),
-            slug: project_id.to_owned(),
-            title: project_id.to_owned(),
-            description: project_id.to_owned(),
-            project_type: "mod".to_owned(),
-            downloads: 1,
-            server_side: "required".to_owned(),
-            client_side: "unsupported".to_owned(),
-            versions: vec!["26.1.2".to_owned()],
-        }
     }
 
     #[test]
