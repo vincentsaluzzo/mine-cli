@@ -131,7 +131,7 @@ Local installs are copied into the server's configured `mods`, `plugins`, or dat
 
 When a package source reports a broad project type, MineCLI tries to infer the right install kind from versions compatible with the current server. For example, a project listed as a mod can still install as a Paper/Purpur plugin when a compatible plugin artifact exists.
 
-Use `install --force` only when you intentionally want to bypass server kind and loader compatibility checks. MineCLI still filters registry installs by Minecraft version and verifies downloaded file hashes, but the target server may not load the package.
+Use `install --force` only when you intentionally want to bypass compatibility checks. MineCLI first tries the configured Minecraft version, then falls back to an unversioned package lookup if needed. Downloaded file hashes are still verified, but the target server may not load the package.
 
 ## Import, Export, And Sync
 

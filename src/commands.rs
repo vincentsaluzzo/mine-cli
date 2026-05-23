@@ -1612,17 +1612,35 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
                 continue;
             }
             let loaders = self.compatible_loaders_for_install(*kind);
-            let versions = self.client.get_project_versions(
+            let mut versions = self.client.get_project_versions(
                 &project.id,
                 &loaders,
                 std::slice::from_ref(&self.config.minecraft_version),
             )?;
+            let mut bypassed_minecraft_version = false;
+            if self.force && select_version(&versions, requested_version, self.channel).is_none() {
+                versions = self
+                    .client
+                    .get_project_versions(&project.id, &loaders, &[])?;
+                bypassed_minecraft_version = true;
+            }
             if let Some(version) = select_version(&versions, requested_version, self.channel) {
                 let loader = matched_loader(version, &loaders);
                 if self.force && !self.config.server_type.supports(*kind) {
                     println!(
                         "Warning: forced install bypasses {} compatibility checks for {}; this server may not load {} packages.",
                         self.config.server_type, project.slug, kind
+                    );
+                }
+                if bypassed_minecraft_version
+                    && !version
+                        .game_versions
+                        .iter()
+                        .any(|version| version == &self.config.minecraft_version)
+                {
+                    println!(
+                        "Warning: forced install selected {} {} without Minecraft {} compatibility.",
+                        project.slug, version.version_number, self.config.minecraft_version
                     );
                 }
                 if *kind != declared_kind && requested_kind.is_none() {
@@ -2710,12 +2728,11 @@ mod tests {
 
     #[test]
     fn install_resolver_infers_plugin_kind_when_project_type_is_mod_on_plugin_server() {
+        let mut bluemap_version = version("bluemap-paper", "bluemap", "5.20-paper", vec![]);
+        bluemap_version.loaders = vec!["paper".to_owned()];
         let source = MockSource::new()
             .with_project(project("bluemap"))
-            .with_versions(
-                "bluemap",
-                vec![version("bluemap-paper", "bluemap", "5.20-paper", vec![])],
-            );
+            .with_versions("bluemap", vec![bluemap_version]);
         let mut config = config();
         config.server_type = ServerType::Purpur;
         let lockfile = LockFile::default();
@@ -2807,6 +2824,40 @@ mod tests {
             plan[0].locked_package.installed_path,
             PathBuf::from("mods/farmers-delight-refabricated.jar")
         );
+    }
+
+    #[test]
+    fn install_resolver_force_falls_back_to_unversioned_versions() {
+        let mut old_version = version_with_loaders(
+            "farmers-delight-old",
+            "farmers-delight",
+            "1.2.7",
+            vec!["forge"],
+        );
+        old_version.game_versions = vec!["1.20.1".to_owned()];
+        let source = MockSource::new()
+            .with_project(project("farmers-delight"))
+            .with_versions("farmers-delight", vec![old_version]);
+        let mut config = config();
+        config.server_type = ServerType::Purpur;
+        config.minecraft_version = "26.1.2".to_owned();
+        let lockfile = LockFile::default();
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            true,
+        );
+
+        let plan = resolver
+            .resolve("farmers-delight", None, None, false)
+            .unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].locked_package.version_number, "1.2.7");
+        assert_eq!(plan[0].locked_package.loader.as_deref(), Some("forge"));
     }
 
     #[test]
@@ -3146,10 +3197,28 @@ mod tests {
         fn get_project_versions(
             &self,
             project: &str,
-            _loaders: &[String],
-            _game_versions: &[String],
+            loaders: &[String],
+            game_versions: &[String],
         ) -> crate::error::Result<Vec<ProjectVersion>> {
-            Ok(self.versions.get(project).cloned().unwrap_or_default())
+            Ok(self
+                .versions
+                .get(project)
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|version| {
+                    game_versions.is_empty()
+                        || game_versions
+                            .iter()
+                            .any(|game_version| version.game_versions.contains(game_version))
+                })
+                .filter(|version| {
+                    loaders.is_empty()
+                        || loaders
+                            .iter()
+                            .any(|loader| version.loaders.contains(loader))
+                })
+                .collect())
         }
 
         fn get_version(&self, version_id: &str) -> crate::error::Result<ProjectVersion> {
