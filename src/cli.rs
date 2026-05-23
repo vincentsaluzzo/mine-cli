@@ -170,6 +170,12 @@ pub enum Command {
 
         #[arg(long, help = "Do not install required dependencies")]
         no_deps: bool,
+
+        #[arg(
+            long,
+            help = "Install even when the package is not compatible with this server type or loader"
+        )]
+        force: bool,
     },
     /// List packages tracked in the local lockfile.
     List {

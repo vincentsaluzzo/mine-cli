@@ -12,6 +12,7 @@ The project follows the versioning policy in [docs/VERSIONING.md](docs/VERSIONIN
 - Added explicit search filters for `--minecraft`, `--loader`, and `--server-compatible`.
 - Search results now render as readable numbered blocks with compact downloads, version summaries, and terminal color when supported.
 - Purpur/Paper plugin compatibility now checks Paper, Spigot, and Bukkit Modrinth artifacts where applicable.
+- Added `install --force` to intentionally bypass server kind and loader compatibility checks while keeping Minecraft version filtering and hash verification.
 
 ## 0.1.0 - 2026-05-17
 

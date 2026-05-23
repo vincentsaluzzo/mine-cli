@@ -98,7 +98,10 @@ minecli --server survival search farmers-delight-refabricated
 minecli --server survival search farmers-delight-refabricated --minecraft 26.1.2
 minecli --server survival --dry-run install bluemap
 minecli --server survival install bluemap
+minecli --server survival --dry-run install farmers-delight-refabricated --force
 ```
+
+`install --force` bypasses server kind and loader compatibility checks for cases you explicitly want to test. It still filters registry installs by Minecraft version and verifies downloaded file hashes.
 
 Update with a dry run first:
 

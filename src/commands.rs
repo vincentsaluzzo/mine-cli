@@ -90,6 +90,7 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
             version,
             channel,
             no_deps,
+            force,
         } => install(
             &globals,
             InstallOptions {
@@ -100,6 +101,7 @@ pub fn execute(globals: GlobalOptions, command: Command) -> Result<()> {
                 requested_version: version,
                 channel,
                 no_deps,
+                force,
             },
         ),
         Command::List { kind, json } => list(&globals, kind, json),
@@ -729,6 +731,7 @@ struct InstallOptions {
     requested_version: Option<String>,
     channel: ReleaseChannel,
     no_deps: bool,
+    force: bool,
 }
 
 fn install(globals: &GlobalOptions, options: InstallOptions) -> Result<()> {
@@ -740,9 +743,12 @@ fn install(globals: &GlobalOptions, options: InstallOptions) -> Result<()> {
             options.requested_version,
             options.channel,
             options.no_deps,
+            options.force,
         ),
-        (None, Some(file), None) => install_local_file(globals, file, options.kind),
-        (None, None, Some(folder)) => install_local_folder(globals, folder, options.kind),
+        (None, Some(file), None) => install_local_file(globals, file, options.kind, options.force),
+        (None, None, Some(folder)) => {
+            install_local_folder(globals, folder, options.kind, options.force)
+        }
         _ => Err(MinecliError::message(
             "install requires exactly one package, --file, or --folder",
         )),
@@ -756,11 +762,12 @@ fn install_from_registry(
     requested_version: Option<String>,
     channel: ReleaseChannel,
     no_deps: bool,
+    force: bool,
 ) -> Result<()> {
     let config = load_server_config(&globals.server_dir)?;
     let mut lockfile = load_lockfile(&globals.server_dir)?;
     let client = ModrinthClient::new()?;
-    let mut resolver = InstallResolver::new(&client, &config, &lockfile, !no_deps, channel);
+    let mut resolver = InstallResolver::new(&client, &config, &lockfile, !no_deps, channel, force);
     let plan = resolver.resolve(&project, kind, requested_version.as_deref(), false)?;
 
     if plan.is_empty() {
@@ -783,7 +790,10 @@ fn install_from_registry(
         plan,
     )?;
     write_lockfile(&globals.server_dir, &lockfile)?;
-    history::record(&globals.server_dir, format!("install {project}"))?;
+    history::record(
+        &globals.server_dir,
+        format!("install {project}{}", if force { " --force" } else { "" }),
+    )?;
     println!("Install complete.");
     Ok(())
 }
@@ -792,13 +802,14 @@ fn install_local_file(
     globals: &GlobalOptions,
     source_path: PathBuf,
     kind: Option<ContentKind>,
+    force: bool,
 ) -> Result<()> {
     let config = load_server_config(&globals.server_dir)?;
     let mut lockfile = load_lockfile(&globals.server_dir)?;
     let kind = kind.ok_or_else(|| {
         MinecliError::message("install --file requires --kind <mod|plugin|datapack>")
     })?;
-    validate_content_kind(config.server_type, kind)?;
+    validate_content_kind(config.server_type, kind, force)?;
     let plan = vec![planned_local_file(
         &config,
         &source_path,
@@ -817,7 +828,11 @@ fn install_local_file(
     write_lockfile(&globals.server_dir, &lockfile)?;
     history::record(
         &globals.server_dir,
-        format!("install local file {}", source_path.display()),
+        format!(
+            "install local file {}{}",
+            source_path.display(),
+            if force { " --force" } else { "" }
+        ),
     )?;
     println!("Install complete.");
     Ok(())
@@ -827,13 +842,14 @@ fn install_local_folder(
     globals: &GlobalOptions,
     source_dir: PathBuf,
     kind: Option<ContentKind>,
+    force: bool,
 ) -> Result<()> {
     let config = load_server_config(&globals.server_dir)?;
     let mut lockfile = load_lockfile(&globals.server_dir)?;
     let kind = kind.ok_or_else(|| {
         MinecliError::message("install --folder requires --kind <mod|plugin|datapack>")
     })?;
-    validate_content_kind(config.server_type, kind)?;
+    validate_content_kind(config.server_type, kind, force)?;
     if !source_dir.is_dir() {
         return Err(MinecliError::message(format!(
             "local source folder does not exist: {}",
@@ -876,7 +892,11 @@ fn install_local_folder(
     write_lockfile(&globals.server_dir, &lockfile)?;
     history::record(
         &globals.server_dir,
-        format!("install local folder {}", source_dir.display()),
+        format!(
+            "install local folder {}{}",
+            source_dir.display(),
+            if force { " --force" } else { "" }
+        ),
     )?;
     println!("Install complete.");
     Ok(())
@@ -1426,6 +1446,7 @@ pub(crate) struct InstallResolver<'a, S: ProjectSource> {
     lockfile: &'a LockFile,
     include_dependencies: bool,
     channel: ReleaseChannel,
+    force: bool,
     visiting: HashSet<String>,
     planned_project_ids: HashSet<String>,
 }
@@ -1437,6 +1458,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         lockfile: &'a LockFile,
         include_dependencies: bool,
         channel: ReleaseChannel,
+        force: bool,
     ) -> Self {
         Self {
             client,
@@ -1444,6 +1466,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             lockfile,
             include_dependencies,
             channel,
+            force,
             visiting: HashSet::new(),
             planned_project_ids: HashSet::new(),
         }
@@ -1457,11 +1480,17 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         installed_as_dependency: bool,
     ) -> Result<Vec<PlannedInstall>> {
         let project = self.client.get_project(project_ref)?;
-        if project.server_side == "unsupported" {
+        if project.server_side == "unsupported" && !self.force {
             return Err(MinecliError::message(format!(
                 "{} is marked as unsupported on servers by its package source",
                 project.slug
             )));
+        }
+        if project.server_side == "unsupported" && self.force {
+            println!(
+                "Warning: forced install ignores that {} is marked unsupported on servers.",
+                project.slug
+            );
         }
         if project.client_side == "required" && project.server_side != "required" {
             println!(
@@ -1574,14 +1603,15 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         let declared_kind = content_kind_from_project_type(&project.project_type)?;
         let candidates = match requested_kind {
             Some(kind) => vec![kind],
+            None if self.force => vec![declared_kind],
             None => install_kind_candidates(self.config.server_type, declared_kind),
         };
 
         for kind in &candidates {
-            if !self.config.server_type.supports(*kind) {
+            if !self.config.server_type.supports(*kind) && !self.force {
                 continue;
             }
-            let loaders = compatible_loaders(self.config.server_type, *kind);
+            let loaders = self.compatible_loaders_for_install(*kind);
             let versions = self.client.get_project_versions(
                 &project.id,
                 &loaders,
@@ -1589,6 +1619,12 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             )?;
             if let Some(version) = select_version(&versions, requested_version, self.channel) {
                 let loader = matched_loader(version, &loaders);
+                if self.force && !self.config.server_type.supports(*kind) {
+                    println!(
+                        "Warning: forced install bypasses {} compatibility checks for {}; this server may not load {} packages.",
+                        self.config.server_type, project.slug, kind
+                    );
+                }
                 if *kind != declared_kind && requested_kind.is_none() {
                     println!(
                         "Using {} install for {} because it has a compatible {} version.",
@@ -1601,7 +1637,8 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             }
         }
 
-        if requested_kind.is_some_and(|kind| !self.config.server_type.supports(kind)) {
+        if requested_kind.is_some_and(|kind| !self.config.server_type.supports(kind)) && !self.force
+        {
             return Err(MinecliError::message(format!(
                 "{} servers cannot install {} projects",
                 self.config.server_type,
@@ -1611,7 +1648,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
 
         let loaders = candidates
             .iter()
-            .flat_map(|kind| compatible_loaders(self.config.server_type, *kind))
+            .flat_map(|kind| self.compatible_loaders_for_install(*kind))
             .collect::<Vec<_>>();
         Err(MinecliError::message(format!(
             "no compatible {} version found for Minecraft {}{}",
@@ -1634,7 +1671,7 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
             let version = self.client.get_version(version_id)?;
             let project = self.client.get_project(dependency_project_id)?;
             let kind = content_kind_from_project_type(&project.project_type)?;
-            let loaders = compatible_loaders(self.config.server_type, kind);
+            let loaders = self.compatible_loaders_for_install(kind);
             if version_matches_server(&version, &self.config.minecraft_version, &loaders) {
                 return self.resolve(
                     dependency_project_id,
@@ -1646,6 +1683,14 @@ impl<'a, S: ProjectSource> InstallResolver<'a, S> {
         }
 
         self.resolve(dependency_project_id, None, None, true)
+    }
+
+    fn compatible_loaders_for_install(&self, kind: ContentKind) -> Vec<String> {
+        if self.force && !self.config.server_type.supports(kind) {
+            Vec::new()
+        } else {
+            compatible_loaders(self.config.server_type, kind)
+        }
     }
 }
 
@@ -1682,6 +1727,7 @@ fn matched_loader(version: &ProjectVersion, compatible_loaders: &[String]) -> Op
         .find(|loader| version.loaders.iter().any(|item| item == *loader))
         .cloned()
         .or_else(|| compatible_loaders.first().cloned())
+        .or_else(|| version.loaders.first().cloned())
 }
 
 fn print_install_plan(plan: &[PlannedInstall], dry_run: bool) {
@@ -1864,7 +1910,7 @@ fn plan_registry_restore<S: ProjectSource>(
     let mut planned_project_ids = HashSet::new();
 
     for package in packages {
-        let mut resolver = InstallResolver::new(source, config, lockfile, true, channel);
+        let mut resolver = InstallResolver::new(source, config, lockfile, true, channel, false);
         let package_plan = resolver.resolve(
             package.source_project_id_or_project_id(),
             Some(package.kind),
@@ -2133,7 +2179,7 @@ fn plan_registry_updates<S: ProjectSource>(
     let mut planned_project_ids = HashSet::new();
 
     for package in selected {
-        let mut resolver = InstallResolver::new(source, config, lockfile, true, channel);
+        let mut resolver = InstallResolver::new(source, config, lockfile, true, channel, false);
         let package_plan = resolver.resolve(
             package.source_project_id_or_project_id(),
             Some(package.kind),
@@ -2198,8 +2244,16 @@ fn remove_replaced_files(
     Ok(())
 }
 
-fn validate_content_kind(server_type: ServerType, kind: ContentKind) -> Result<()> {
+fn validate_content_kind(server_type: ServerType, kind: ContentKind, force: bool) -> Result<()> {
     if server_type.supports(kind) {
+        return Ok(());
+    }
+
+    if force {
+        println!(
+            "Warning: forced install bypasses {} compatibility checks; this server may not load {} packages.",
+            server_type, kind
+        );
         return Ok(());
     }
 
@@ -2607,8 +2661,14 @@ mod tests {
             .with_versions("dep", vec![version("dep-version", "dep", "1.0.0", vec![])]);
         let config = config();
         let lockfile = LockFile::default();
-        let mut resolver =
-            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            false,
+        );
 
         let plan = resolver
             .resolve("root", Some(ContentKind::Mod), None, false)
@@ -2632,8 +2692,14 @@ mod tests {
         let mut installed = package("root", vec![], false);
         installed.version_id = "root-version".to_owned();
         lockfile.upsert_package(installed);
-        let mut resolver =
-            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            false,
+        );
 
         let plan = resolver
             .resolve("root", Some(ContentKind::Mod), None, false)
@@ -2653,8 +2719,14 @@ mod tests {
         let mut config = config();
         config.server_type = ServerType::Purpur;
         let lockfile = LockFile::default();
-        let mut resolver =
-            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            false,
+        );
 
         let plan = resolver.resolve("bluemap", None, None, false).unwrap();
 
@@ -2683,14 +2755,58 @@ mod tests {
         let mut config = config();
         config.server_type = ServerType::Purpur;
         let lockfile = LockFile::default();
-        let mut resolver =
-            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            false,
+        );
 
         let plan = resolver.resolve("plugin", None, None, false).unwrap();
 
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].locked_package.kind, ContentKind::Plugin);
         assert_eq!(plan[0].locked_package.loader.as_deref(), Some("spigot"));
+    }
+
+    #[test]
+    fn install_resolver_force_installs_declared_mod_kind_on_plugin_server() {
+        let mut farmers_version = version_with_loaders(
+            "farmers-delight-fabric",
+            "farmers-delight-refabricated",
+            "26.1-3.6.5",
+            vec!["fabric"],
+        );
+        farmers_version.game_versions = vec!["26.1.2".to_owned()];
+        let source = MockSource::new()
+            .with_project(project("farmers-delight-refabricated"))
+            .with_versions("farmers-delight-refabricated", vec![farmers_version]);
+        let mut config = config();
+        config.server_type = ServerType::Purpur;
+        config.minecraft_version = "26.1.2".to_owned();
+        let lockfile = LockFile::default();
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            true,
+        );
+
+        let plan = resolver
+            .resolve("farmers-delight-refabricated", None, None, false)
+            .unwrap();
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].locked_package.kind, ContentKind::Mod);
+        assert_eq!(plan[0].locked_package.loader.as_deref(), Some("fabric"));
+        assert_eq!(
+            plan[0].locked_package.installed_path,
+            PathBuf::from("mods/farmers-delight-refabricated.jar")
+        );
     }
 
     #[test]
@@ -2926,8 +3042,14 @@ mod tests {
             );
         let config = config();
         let lockfile = LockFile::default();
-        let mut resolver =
-            InstallResolver::new(&source, &config, &lockfile, true, ReleaseChannel::Release);
+        let mut resolver = InstallResolver::new(
+            &source,
+            &config,
+            &lockfile,
+            true,
+            ReleaseChannel::Release,
+            false,
+        );
 
         let result = resolver.resolve("root", Some(ContentKind::Mod), None, false);
 

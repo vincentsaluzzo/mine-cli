@@ -40,6 +40,7 @@ cargo run -- --path /srv/minecraft/survival search minimap --all-sides
 cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated
 cargo run -- --path /srv/minecraft/survival search farmers-delight-refabricated --minecraft 26.1.2
 cargo run -- --path /srv/minecraft/survival --dry-run install fabric-api --kind mod
+cargo run -- --path /srv/minecraft/survival --dry-run install farmers-delight-refabricated --force
 cargo run -- --path /srv/minecraft/survival install --file ./mods/example.jar --kind mod
 cargo run -- --path /srv/minecraft/survival install --folder ./mods-to-install --kind mod
 cargo run -- --path /srv/minecraft/survival import --dry-run
@@ -129,6 +130,8 @@ cargo run -- --server survival install --file ./datapack.zip --kind datapack
 Local installs are copied into the server's configured `mods`, `plugins`, or datapacks directory and tracked in `.minecli/lock.toml` with SHA-512/SHA-1 hashes.
 
 When a package source reports a broad project type, MineCLI tries to infer the right install kind from versions compatible with the current server. For example, a project listed as a mod can still install as a Paper/Purpur plugin when a compatible plugin artifact exists.
+
+Use `install --force` only when you intentionally want to bypass server kind and loader compatibility checks. MineCLI still filters registry installs by Minecraft version and verifies downloaded file hashes, but the target server may not load the package.
 
 ## Import, Export, And Sync
 
